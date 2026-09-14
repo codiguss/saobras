@@ -1,8 +1,27 @@
-export default function AlunosPage() {
+import { supabase } from "@/lib/supabase";
+import { AlunosClient } from "@/components/alunos/AlunosClient";
+
+export const revalidate = 0; // Para sempre buscar dados novos durante o desenvolvimento
+
+export default async function AlunosPage() {
+  const { data: alunos, error } = await supabase
+    .from("alunos")
+    .select("*")
+    .order("nome_completo", { ascending: true });
+
+  if (error) {
+    return (
+      <div className="p-8 max-w-7xl mx-auto">
+        <div className="bg-red-50 text-red-600 p-4 rounded-md border border-red-100">
+          Erro ao carregar alunos: {error.message}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold text-slate-900">Gestão de Alunos</h1>
-      <p className="text-slate-500 mt-2">Página em construção...</p>
+    <div className="p-8 max-w-7xl mx-auto">
+      <AlunosClient alunos={alunos || []} />
     </div>
   );
 }

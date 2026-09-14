@@ -15,8 +15,8 @@ export function FormLogin() {
   return (
     <form onSubmit={handleLogin} className="space-y-6">
       <div>
-        <label className="block text-xs font-medium text-slate-600 uppercase tracking-wider mb-1.5">
-          E-mail ou Usuário
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          E-mail
         </label>
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -26,7 +26,7 @@ export function FormLogin() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 transition-all text-sm"
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors text-sm"
             placeholder="operador@instituto.com"
             required
           />
@@ -34,7 +34,7 @@ export function FormLogin() {
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-slate-600 uppercase tracking-wider mb-1.5">
+        <label className="block text-sm font-medium text-slate-700 mb-1">
           Senha
         </label>
         <div className="relative">
@@ -45,7 +45,7 @@ export function FormLogin() {
             type="password"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 transition-all text-sm"
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors text-sm"
             placeholder="••••••••"
             required
           />
@@ -54,7 +54,7 @@ export function FormLogin() {
 
       <button
         type="submit"
-        className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 mt-8 transition-colors"
+        className="w-full flex justify-center py-2.5 px-4 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none transition-colors mt-8"
       >
         Entrar no Sistema
       </button>
