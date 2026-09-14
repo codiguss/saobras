@@ -1,7 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { X, Edit2, Trash2, User, Phone, MapPin, Mail, Save, AlertCircle, Search } from "lucide-react";
+import {
+  X,
+  Edit2,
+  Trash2,
+  User,
+  Phone,
+  MapPin,
+  Mail,
+  Save,
+  AlertCircle,
+  Search,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -25,73 +36,104 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   const router = useRouter();
   const [selectedAluno, setSelectedAluno] = useState<Aluno | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  
-  // Estados para controlar os fluxos do modal
+
   const [isEditing, setIsEditing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  
+
   const [formData, setFormData] = useState<Partial<Aluno>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
-  // Funções de Máscara
+  // Máscara de CPF
   const formatCPF = (value: string) => {
     return value
-      .replace(/\D/g, '')
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d{1,2})/, '$1-$2')
-      .replace(/(-\d{2})\d+?$/, '$1'); // Limita o tamanho
+      .replace(/\D/g, "")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})/, "$1-$2")
+      .replace(/(-\d{2})\d+?$/, "$1");
   };
 
+  // Máscara de telefone
   const formatPhone = (value: string) => {
     let v = value.replace(/\D/g, "");
-    if (v.length > 11) v = v.slice(0, 11);
-    if (v.length > 10) return v.replace(/^(\d{2})(\d{5})(\d{4}).*/, "($1) $2-$3");
-    if (v.length > 5) return v.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, "($1) $2-$3");
-    if (v.length > 2) return v.replace(/^(\d{2})(\d{0,5})/, "($1) $2");
+
+    if (v.length > 11) {
+      v = v.slice(0, 11);
+    }
+
+    if (v.length > 10) {
+      return v.replace(
+        /^(\d{2})(\d{5})(\d{4}).*/,
+        "($1) $2-$3"
+      );
+    }
+
+    if (v.length > 5) {
+      return v.replace(
+        /^(\d{2})(\d{4})(\d{0,4}).*/,
+        "($1) $2-$3"
+      );
+    }
+
+    if (v.length > 2) {
+      return v.replace(
+        /^(\d{2})(\d{0,5})/,
+        "($1) $2"
+      );
+    }
+
     return v;
   };
 
+  // Máscara do CPF na tabela
   const maskCpfPreview = (cpf: string | null) => {
     if (!cpf) return "Não informado";
+
     const digits = cpf.replace(/\D/g, "");
+
     if (digits.length === 11) {
       return `***.***.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
     }
+
     return "***.***.***-**";
   };
 
-  // Iniciar criação de um novo aluno
+  // Criar novo aluno
   const startCreating = () => {
     setSelectedAluno(null);
-    setFormData({ status_estudante: true, nis: false }); // Valores padrão
+    setFormData({
+      status_estudante: true,
+      nis: false,
+    });
+
     setIsCreating(true);
-    setIsEditing(true); // O modo criação é essencialmente um modo edição
+    setIsEditing(true);
   };
 
-  // Iniciar edição de um aluno existente
+  // Editar aluno
   const startEditing = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
     setFormData(selectedAluno || {});
     setIsEditing(true);
   };
 
-  // Fechar totalmente sem alertas
+  // Fechar painel
   const closePanel = () => {
     setSelectedAluno(null);
     setIsEditing(false);
     setIsCreating(false);
   };
 
-  // Tentativa de fechar o painel principal
+  // Tentar fechar
   const handleCloseAttempt = (e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    
+
     if (isEditing || isCreating) {
       setShowDiscardConfirm(true);
     } else {
@@ -99,38 +141,38 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     }
   };
 
+  // Botão descartar
   const handleDiscardClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
     setShowDiscardConfirm(true);
   };
 
-  // Confirmou que quer descartar
+  // Confirmar descarte
   const confirmDiscard = () => {
     setShowDiscardConfirm(false);
+
     if (isCreating) {
-      // Se estava criando, simplesmente fecha tudo
       closePanel();
     } else {
-      // Se estava apenas editando, volta para visualização
       setIsEditing(false);
     }
   };
 
-  // Desistiu de descartar (fica no form)
+  // Cancelar descarte
   const cancelDiscard = () => {
     setShowDiscardConfirm(false);
   };
 
-  // Salvar no Banco (tanto Update quanto Insert)
+  // Salvar
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    
+
     let dbError;
-    
+
     if (isCreating) {
-      // INSERT
       const { error } = await supabase
         .from("alunos")
         .insert([
@@ -144,12 +186,12 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
             bairro: formData.bairro,
             municipio: formData.municipio,
             status_estudante: formData.status_estudante,
-            nis: formData.nis
-          }
+            nis: formData.nis,
+          },
         ]);
+
       dbError = error;
     } else if (selectedAluno) {
-      // UPDATE
       const { error } = await supabase
         .from("alunos")
         .update({
@@ -162,9 +204,10 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
           bairro: formData.bairro,
           municipio: formData.municipio,
           status_estudante: formData.status_estudante,
-          nis: formData.nis
+          nis: formData.nis,
         })
         .eq("id", selectedAluno.id);
+
       dbError = error;
     }
 
@@ -175,15 +218,17 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
       return;
     }
 
-    // Sucesso, limpa e recarrega
     closePanel();
     router.refresh();
   };
 
-  const handleInputChange = (field: keyof Aluno, value: string | number | boolean | null) => {
+  // Alteração dos campos
+  const handleInputChange = (
+    field: keyof Aluno,
+    value: string | number | boolean | null
+  ) => {
     let finalValue = value;
-    
-    // Armazena no estado (e no banco) apenas os números puros e limita o tamanho
+
     if (typeof value === "string") {
       if (field === "cpf") {
         finalValue = value.replace(/\D/g, "").slice(0, 11);
@@ -191,15 +236,19 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
         finalValue = value.replace(/\D/g, "").slice(0, 11);
       }
     }
-    
-    setFormData(prev => ({ ...prev, [field]: finalValue }));
+
+    setFormData((prev) => ({
+      ...prev,
+      [field]: finalValue,
+    }));
   };
 
-  // A tela deve abrir se houver um aluno selecionado OU se estiver no fluxo de criação
   const showModal = !!selectedAluno || isCreating;
 
+  // Filtro da tabela
   const filteredAlunos = (alunos || []).filter((aluno) => {
     const term = searchTerm.toLowerCase();
+
     return (
       (aluno.nome_completo?.toLowerCase() || "").includes(term) ||
       (aluno.cpf?.toLowerCase() || "").includes(term) ||
@@ -211,8 +260,11 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     <>
       {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Gestão de Alunos</h1>
-        <button 
+        <h1 className="text-2xl font-bold text-slate-900">
+          Gestão de Alunos
+        </h1>
+
+        <button
           type="button"
           onClick={startCreating}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
@@ -225,7 +277,8 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
       <div className="mb-6 flex gap-4 items-center">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-          <input 
+
+          <input
             type="text"
             placeholder="Buscar por nome, CPF ou telefone..."
             value={searchTerm}
@@ -247,34 +300,42 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
               <th className="px-6 py-4">Status</th>
             </tr>
           </thead>
+
           <tbody className="divide-y divide-slate-200">
             {filteredAlunos.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                  {searchTerm 
-                    ? "Nenhum aluno encontrado para sua busca." 
+                <td
+                  colSpan={5}
+                  className="px-6 py-12 text-center text-slate-500"
+                >
+                  {searchTerm
+                    ? "Nenhum aluno encontrado para sua busca."
                     : "Nenhum aluno cadastrado no momento."}
                 </td>
               </tr>
             ) : (
               filteredAlunos.map((aluno) => (
-                <tr 
-                  key={aluno.id} 
+                <tr
+                  key={aluno.id}
                   onClick={() => setSelectedAluno(aluno)}
                   className="hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   <td className="px-6 py-4 text-slate-900 font-medium">
                     {aluno.nome_completo}
                   </td>
+
                   <td className="px-6 py-4 text-slate-500">
                     {maskCpfPreview(aluno.cpf)}
                   </td>
+
                   <td className="px-6 py-4 text-slate-500">
                     {aluno.bairro || "Não informado"}
                   </td>
+
                   <td className="px-6 py-4 text-slate-500">
                     {aluno.telefone || "Não informado"}
                   </td>
+
                   <td className="px-6 py-4">
                     {aluno.status_estudante ? (
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
@@ -293,25 +354,27 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
         </table>
       </div>
 
-      {/* Modal Principal (Visualizar, Editar ou Criar) */}
+      {/* Modal Principal */}
       {showModal && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 z-40 flex items-center justify-center p-4 transition-opacity" 
+        <div
+          className="fixed inset-0 bg-slate-900/60 z-40 flex items-center justify-center p-4 transition-opacity"
           onClick={handleCloseAttempt}
         >
-          <div 
+          <div
             className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col transform transition-all"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header do Modal */}
+            {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-lg">
               <h2 className="text-lg font-semibold text-slate-900">
-                {isCreating 
-                  ? "Cadastrar Novo Aluno" 
-                  : isEditing ? "Editar Dados do Aluno" : "Detalhes do Aluno"
-                }
+                {isCreating
+                  ? "Cadastrar Novo Aluno"
+                  : isEditing
+                  ? "Editar Dados do Aluno"
+                  : "Detalhes do Aluno"}
               </h2>
-              <button 
+
+              <button
                 type="button"
                 onClick={handleCloseAttempt}
                 className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-200"
@@ -320,20 +383,26 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
               </button>
             </div>
 
-            {/* Corpo do Modal (Rolável) */}
+            {/* Corpo */}
             <div className="flex-1 overflow-y-auto p-6">
-              
               {!isEditing && selectedAluno ? (
-                // MODO VISUALIZAÇÃO (Leitura)
+                /* MODO VISUALIZAÇÃO */
                 <>
                   <div className="flex items-center gap-5 mb-8">
                     <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 flex-shrink-0">
                       <User className="w-8 h-8" />
                     </div>
+
                     <div>
-                      <h3 className="text-2xl font-bold text-slate-900">{selectedAluno.nome_completo}</h3>
+                      <h3 className="text-2xl font-bold text-slate-900">
+                        {selectedAluno.nome_completo}
+                      </h3>
+
                       <p className="text-sm text-slate-500 mt-1">
-                        Cadastrado em {new Date(selectedAluno.criado_em).toLocaleDateString('pt-BR')}
+                        Cadastrado em{" "}
+                        {new Date(
+                          selectedAluno.criado_em
+                        ).toLocaleDateString("pt-BR")}
                       </p>
                     </div>
                   </div>
@@ -341,181 +410,315 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-6">
                       <div>
-                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Contato</h4>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                          Contato
+                        </h4>
+
                         <div className="space-y-3">
                           <div className="flex items-center gap-3 text-sm text-slate-700 bg-slate-50 p-2.5 rounded-md border border-slate-100">
                             <Phone className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                            <span className="truncate">{selectedAluno.telefone || "Não informado"}</span>
+                            <span className="truncate">
+                              {selectedAluno.telefone || "Não informado"}
+                            </span>
                           </div>
+
                           <div className="flex items-center gap-3 text-sm text-slate-700 bg-slate-50 p-2.5 rounded-md border border-slate-100">
                             <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                            <span className="truncate">{selectedAluno.email || "Não informado"}</span>
+                            <span className="truncate">
+                              {selectedAluno.email || "Não informado"}
+                            </span>
                           </div>
                         </div>
                       </div>
 
                       <div>
-                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Localização</h4>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                          Localização
+                        </h4>
+
                         <div className="flex items-start gap-3 text-sm text-slate-700 bg-slate-50 p-2.5 rounded-md border border-slate-100">
                           <MapPin className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+
                           <div>
-                            <p className="font-medium text-slate-800">{selectedAluno.bairro || "Bairro não informado"}</p>
-                            <p className="text-slate-500">{selectedAluno.municipio || "Município não informado"}</p>
+                            <p className="font-medium text-slate-800">
+                              {selectedAluno.bairro ||
+                                "Bairro não informado"}
+                            </p>
+
+                            <p className="text-slate-500">
+                              {selectedAluno.municipio ||
+                                "Município não informado"}
+                            </p>
                           </div>
                         </div>
                       </div>
                     </div>
 
                     <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Informações Pessoais</h4>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                        Informações Pessoais
+                      </h4>
+
                       <div className="bg-slate-50 p-4 rounded-md border border-slate-100 space-y-4">
                         <div>
-                          <p className="text-xs text-slate-500 mb-1">CPF</p>
-                          <p className="text-sm font-medium text-slate-900">{selectedAluno.cpf || "-"}</p>
+                          <p className="text-xs text-slate-500 mb-1">
+                            CPF
+                          </p>
+                          <p className="text-sm font-medium text-slate-900">
+                            {selectedAluno.cpf || "-"}
+                          </p>
                         </div>
+
                         <div>
-                          <p className="text-xs text-slate-500 mb-1">Idade</p>
-                          <p className="text-sm font-medium text-slate-900">{selectedAluno.idade ? `${selectedAluno.idade} anos` : "-"}</p>
+                          <p className="text-xs text-slate-500 mb-1">
+                            Idade
+                          </p>
+                          <p className="text-sm font-medium text-slate-900">
+                            {selectedAluno.idade
+                              ? `${selectedAluno.idade} anos`
+                              : "-"}
+                          </p>
                         </div>
+
                         <div>
-                          <p className="text-xs text-slate-500 mb-1">Nome do Responsável</p>
-                          <p className="text-sm font-medium text-slate-900">{selectedAluno.nome_responsavel || "-"}</p>
+                          <p className="text-xs text-slate-500 mb-1">
+                            Nome do Responsável
+                          </p>
+                          <p className="text-sm font-medium text-slate-900">
+                            {selectedAluno.nome_responsavel || "-"}
+                          </p>
                         </div>
+
                         <div>
-                          <p className="text-xs text-slate-500 mb-1">Beneficiário NIS?</p>
-                          <p className="text-sm font-medium text-slate-900">{selectedAluno.nis ? "Sim (Cadastrado)" : "Não"}</p>
+                          <p className="text-xs text-slate-500 mb-1">
+                            Beneficiário NIS?
+                          </p>
+                          <p className="text-sm font-medium text-slate-900">
+                            {selectedAluno.nis
+                              ? "Sim (Cadastrado)"
+                              : "Não"}
+                          </p>
                         </div>
                       </div>
                     </div>
                   </div>
                 </>
               ) : (
-                // MODO EDIÇÃO E CRIAÇÃO (Formulário)
-                <form id="edit-form" onSubmit={handleSave} className="space-y-6">
-                  
+                /* MODO EDIÇÃO / CRIAÇÃO */
+                <form
+                  id="edit-form"
+                  onSubmit={handleSave}
+                  className="space-y-6"
+                >
+                  {/* 1. NOME COMPLETO */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo</label>
-                    <input 
-                      type="text" 
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Nome Completo
+                    </label>
+
+                    <input
+                      type="text"
                       required
                       value={formData.nome_completo || ""}
-                      onChange={(e) => handleInputChange("nome_completo", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange(
+                          "nome_completo",
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                     />
                   </div>
 
+                  {/* 2. CPF + IDADE */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">CPF</label>
-                      <input 
-                        type="text" 
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        CPF
+                      </label>
+
+                      <input
+                        type="text"
                         required
                         value={formatCPF(formData.cpf || "")}
-                        onChange={(e) => handleInputChange("cpf", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "cpf",
+                            e.target.value
+                          )
+                        }
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Idade</label>
-                      <input 
-                        type="number" 
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Idade
+                      </label>
+
+                      <input
+                        type="number"
                         value={formData.idade || ""}
-                        onChange={(e) => handleInputChange("idade", parseInt(e.target.value) || null)}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "idade",
+                            parseInt(e.target.value) || null
+                          )
+                        }
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Telefone</label>
-                      <input 
-                        type="text" 
-                        value={formatPhone(formData.telefone || "")}
-                        onChange={(e) => handleInputChange("telefone", e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">E-mail</label>
-                      <input 
-                        type="email" 
-                        value={formData.email || ""}
-                        onChange={(e) => handleInputChange("email", e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
-                      />
-                    </div>
-                  </div>
-
+                  {/* 3. NOME DO RESPONSÁVEL */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Nome do Responsável</label>
-                    <input 
-                      type="text" 
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Nome do Responsável
+                    </label>
+
+                    <input
+                      type="text"
                       value={formData.nome_responsavel || ""}
-                      onChange={(e) => handleInputChange("nome_responsavel", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange(
+                          "nome_responsavel",
+                          e.target.value
+                        )
+                      }
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                     />
                   </div>
 
+                  {/* 4. TELEFONE + E-MAIL
+                      FICAM LOGO ABAIXO DO RESPONSÁVEL */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Bairro</label>
-                      <input 
-                        type="text" 
-                        value={formData.bairro || ""}
-                        onChange={(e) => handleInputChange("bairro", e.target.value)}
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Telefone
+                      </label>
+
+                      <input
+                        type="text"
+                        value={formatPhone(formData.telefone || "")}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "telefone",
+                            e.target.value
+                          )
+                        }
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Município</label>
-                      <input 
-                        type="text" 
-                        value={formData.municipio || ""}
-                        onChange={(e) => handleInputChange("municipio", e.target.value)}
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        E-mail
+                      </label>
+
+                      <input
+                        type="email"
+                        value={formData.email || ""}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "email",
+                            e.target.value
+                          )
+                        }
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                       />
                     </div>
                   </div>
 
+                  {/* 5. BAIRRO + MUNICÍPIO */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Bairro
+                      </label>
+
+                      <input
+                        type="text"
+                        value={formData.bairro || ""}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "bairro",
+                            e.target.value
+                          )
+                        }
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Município
+                      </label>
+
+                      <input
+                        type="text"
+                        value={formData.municipio || ""}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "municipio",
+                            e.target.value
+                          )
+                        }
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 6. CHECKBOXES */}
                   <div className="flex gap-6 mt-4 p-4 bg-slate-50 border border-slate-200 rounded-md">
                     <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={!!formData.status_estudante}
-                        onChange={(e) => handleInputChange("status_estudante", e.target.checked)}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "status_estudante",
+                            e.target.checked
+                          )
+                        }
                         className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                       />
+
                       É Estudante?
                     </label>
-                    
+
                     <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={!!formData.nis}
-                        onChange={(e) => handleInputChange("nis", e.target.checked)}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "nis",
+                            e.target.checked
+                          )
+                        }
                         className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                       />
+
                       Beneficiário do NIS?
                     </label>
                   </div>
-
                 </form>
               )}
             </div>
 
-            {/* Rodapé do Modal com Ações */}
+            {/* Rodapé */}
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
               {!isEditing && selectedAluno ? (
                 <>
-                  <button 
+                  <button
                     type="button"
                     className="bg-white border border-red-200 hover:bg-red-50 text-red-600 px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                     Excluir
                   </button>
-                  <button 
+
+                  <button
                     type="button"
                     onClick={startEditing}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors"
@@ -526,21 +729,25 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                 </>
               ) : (
                 <>
-                  <button 
+                  <button
                     type="button"
                     onClick={handleDiscardClick}
                     className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors"
                     disabled={isSaving}
                   >
-                    {isCreating ? "Cancelar" : "Descartar Alterações"}
+                    {isCreating
+                      ? "Cancelar"
+                      : "Descartar Alterações"}
                   </button>
-                  <button 
+
+                  <button
                     type="submit"
                     form="edit-form"
                     disabled={isSaving}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                   >
                     <Save className="w-4 h-4" />
+
                     {isSaving ? "Salvando..." : "Salvar"}
                   </button>
                 </>
@@ -550,28 +757,35 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
         </div>
       )}
 
-      {/* Modal Secundário de Confirmação (Descartar Alterações) */}
+      {/* Modal de confirmação */}
       {showDiscardConfirm && (
         <div className="fixed inset-0 bg-slate-900/40 z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 text-center transform transition-all">
             <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
               <AlertCircle className="w-6 h-6" />
             </div>
+
             <h3 className="text-lg font-bold text-slate-900 mb-2">
-              {isCreating ? "Cancelar cadastro?" : "Descartar alterações?"}
+              {isCreating
+                ? "Cancelar cadastro?"
+                : "Descartar alterações?"}
             </h3>
+
             <p className="text-sm text-slate-500 mb-6">
-              Você tem modificações não salvas. Se sair agora, todos os dados digitados serão perdidos.
+              Você tem modificações não salvas. Se sair agora,
+              todos os dados digitados serão perdidos.
             </p>
+
             <div className="flex gap-3 justify-center">
-              <button 
+              <button
                 type="button"
                 onClick={cancelDiscard}
                 className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors"
               >
                 Voltar
               </button>
-              <button 
+
+              <button
                 type="button"
                 onClick={confirmDiscard}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
