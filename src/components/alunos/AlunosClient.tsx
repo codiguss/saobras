@@ -34,6 +34,7 @@ export type Aluno = {
 
 export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   const router = useRouter();
+
   const [selectedAluno, setSelectedAluno] = useState<Aluno | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -42,7 +43,12 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
 
   const [formData, setFormData] = useState<Partial<Aluno>>({});
   const [isSaving, setIsSaving] = useState(false);
+
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  // Estados da exclusão
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Máscara de CPF
   const formatCPF = (value: string) => {
@@ -102,6 +108,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   // Criar novo aluno
   const startCreating = () => {
     setSelectedAluno(null);
+
     setFormData({
       status_estudante: true,
       nis: false,
@@ -125,6 +132,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     setSelectedAluno(null);
     setIsEditing(false);
     setIsCreating(false);
+    setShowDeleteConfirm(false);
   };
 
   // Tentar fechar
@@ -165,9 +173,44 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     setShowDiscardConfirm(false);
   };
 
+  // Abrir confirmação de exclusão
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setShowDeleteConfirm(true);
+  };
+
+  // Excluir aluno do banco
+  const handleDelete = async () => {
+    if (!selectedAluno) {
+      return;
+    }
+
+    setIsDeleting(true);
+
+    const { error } = await supabase
+      .from("alunos")
+      .delete()
+      .eq("id", selectedAluno.id);
+
+    setIsDeleting(false);
+
+    if (error) {
+      alert("Erro ao excluir aluno: " + error.message);
+      return;
+    }
+
+    setShowDeleteConfirm(false);
+    closePanel();
+
+    router.refresh();
+  };
+
   // Salvar
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
     setIsSaving(true);
 
     let dbError;
@@ -417,6 +460,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                         <div className="space-y-3">
                           <div className="flex items-center gap-3 text-sm text-slate-700 bg-slate-50 p-2.5 rounded-md border border-slate-100">
                             <Phone className="w-4 h-4 text-slate-400 flex-shrink-0" />
+
                             <span className="truncate">
                               {selectedAluno.telefone || "Não informado"}
                             </span>
@@ -424,6 +468,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
 
                           <div className="flex items-center gap-3 text-sm text-slate-700 bg-slate-50 p-2.5 rounded-md border border-slate-100">
                             <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
+
                             <span className="truncate">
                               {selectedAluno.email || "Não informado"}
                             </span>
@@ -464,6 +509,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                           <p className="text-xs text-slate-500 mb-1">
                             CPF
                           </p>
+
                           <p className="text-sm font-medium text-slate-900">
                             {selectedAluno.cpf || "-"}
                           </p>
@@ -473,6 +519,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                           <p className="text-xs text-slate-500 mb-1">
                             Idade
                           </p>
+
                           <p className="text-sm font-medium text-slate-900">
                             {selectedAluno.idade
                               ? `${selectedAluno.idade} anos`
@@ -484,6 +531,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                           <p className="text-xs text-slate-500 mb-1">
                             Nome do Responsável
                           </p>
+
                           <p className="text-sm font-medium text-slate-900">
                             {selectedAluno.nome_responsavel || "-"}
                           </p>
@@ -493,6 +541,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                           <p className="text-xs text-slate-500 mb-1">
                             Beneficiário NIS?
                           </p>
+
                           <p className="text-sm font-medium text-slate-900">
                             {selectedAluno.nis
                               ? "Sim (Cadastrado)"
@@ -589,8 +638,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                     />
                   </div>
 
-                  {/* 4. TELEFONE + E-MAIL
-                      FICAM LOGO ABAIXO DO RESPONSÁVEL */}
+                  {/* 4. TELEFONE + E-MAIL */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -710,14 +758,19 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
               {!isEditing && selectedAluno ? (
                 <>
+                  {/* BOTÃO EXCLUIR */}
                   <button
                     type="button"
-                    className="bg-white border border-red-200 hover:bg-red-50 text-red-600 px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                    onClick={handleDeleteClick}
+                    disabled={isDeleting}
+                    className="bg-white border border-red-200 hover:bg-red-50 text-red-600 px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Excluir
+
+                    {isDeleting ? "Excluindo..." : "Excluir"}
                   </button>
 
+                  {/* BOTÃO EDITAR */}
                   <button
                     type="button"
                     onClick={startEditing}
@@ -757,10 +810,63 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
         </div>
       )}
 
-      {/* Modal de confirmação */}
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-slate-900/50 z-[70] flex items-center justify-center p-4">
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-900 text-center mb-2">
+              Excluir aluno?
+            </h3>
+
+            <p className="text-sm text-slate-500 text-center mb-6">
+              Tem certeza que deseja excluir{" "}
+              <strong className="text-slate-700">
+                {selectedAluno?.nome_completo}
+              </strong>
+              ?
+              <br />
+              Essa ação não poderá ser desfeita.
+            </p>
+
+            <div className="flex gap-3">
+              {/* CANCELAR EXCLUSÃO */}
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+
+              {/* CONFIRMAR EXCLUSÃO */}
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeleting ? "Excluindo..." : "Sim, excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE DESCARTE */}
       {showDiscardConfirm && (
         <div className="fixed inset-0 bg-slate-900/40 z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 text-center transform transition-all">
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 text-center transform transition-all"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
               <AlertCircle className="w-6 h-6" />
             </div>
