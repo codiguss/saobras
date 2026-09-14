@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Edit2, Trash2, User, Phone, MapPin, Mail, Save, AlertCircle } from "lucide-react";
+import { X, Edit2, Trash2, User, Phone, MapPin, Mail, Save, AlertCircle, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -24,6 +24,7 @@ export type Aluno = {
 export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   const router = useRouter();
   const [selectedAluno, setSelectedAluno] = useState<Aluno | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
   
   // Estados para controlar os fluxos do modal
   const [isEditing, setIsEditing] = useState(false);
@@ -32,6 +33,34 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   const [formData, setFormData] = useState<Partial<Aluno>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  // Funções de Máscara
+  const formatCPF = (value: string) => {
+    return value
+      .replace(/\D/g, '')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+      .replace(/(-\d{2})\d+?$/, '$1'); // Limita o tamanho
+  };
+
+  const formatPhone = (value: string) => {
+    let v = value.replace(/\D/g, "");
+    if (v.length > 11) v = v.slice(0, 11);
+    if (v.length > 10) return v.replace(/^(\d{2})(\d{5})(\d{4}).*/, "($1) $2-$3");
+    if (v.length > 5) return v.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, "($1) $2-$3");
+    if (v.length > 2) return v.replace(/^(\d{2})(\d{0,5})/, "($1) $2");
+    return v;
+  };
+
+  const maskCpfPreview = (cpf: string | null) => {
+    if (!cpf) return "Não informado";
+    const digits = cpf.replace(/\D/g, "");
+    if (digits.length === 11) {
+      return `***.***.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
+    }
+    return "***.***.***-**";
+  };
 
   // Iniciar criação de um novo aluno
   const startCreating = () => {
@@ -152,16 +181,36 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   };
 
   const handleInputChange = (field: keyof Aluno, value: string | number | boolean | null) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let finalValue = value;
+    
+    // Armazena no estado (e no banco) apenas os números puros e limita o tamanho
+    if (typeof value === "string") {
+      if (field === "cpf") {
+        finalValue = value.replace(/\D/g, "").slice(0, 11);
+      } else if (field === "telefone") {
+        finalValue = value.replace(/\D/g, "").slice(0, 11);
+      }
+    }
+    
+    setFormData(prev => ({ ...prev, [field]: finalValue }));
   };
 
   // A tela deve abrir se houver um aluno selecionado OU se estiver no fluxo de criação
   const showModal = !!selectedAluno || isCreating;
 
+  const filteredAlunos = (alunos || []).filter((aluno) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      (aluno.nome_completo?.toLowerCase() || "").includes(term) ||
+      (aluno.cpf?.toLowerCase() || "").includes(term) ||
+      (aluno.telefone?.toLowerCase() || "").includes(term)
+    );
+  });
+
   return (
     <>
       {/* Cabeçalho */}
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Gestão de Alunos</h1>
         <button 
           type="button"
@@ -170,6 +219,20 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
         >
           + Novo Aluno
         </button>
+      </div>
+
+      {/* Barra de Busca */}
+      <div className="mb-6 flex gap-4 items-center">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <input 
+            type="text"
+            placeholder="Buscar por nome, CPF ou telefone..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors shadow-sm"
+          />
+        </div>
       </div>
 
       {/* Tabela de Alunos */}
@@ -185,14 +248,16 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {!alunos || alunos.length === 0 ? (
+            {filteredAlunos.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                  Nenhum aluno cadastrado no momento.
+                  {searchTerm 
+                    ? "Nenhum aluno encontrado para sua busca." 
+                    : "Nenhum aluno cadastrado no momento."}
                 </td>
               </tr>
             ) : (
-              alunos.map((aluno) => (
+              filteredAlunos.map((aluno) => (
                 <tr 
                   key={aluno.id} 
                   onClick={() => setSelectedAluno(aluno)}
@@ -202,7 +267,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                     {aluno.nome_completo}
                   </td>
                   <td className="px-6 py-4 text-slate-500">
-                    {aluno.cpf || "Não informado"}
+                    {maskCpfPreview(aluno.cpf)}
                   </td>
                   <td className="px-6 py-4 text-slate-500">
                     {aluno.bairro || "Não informado"}
@@ -344,7 +409,8 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                       <label className="block text-sm font-medium text-slate-700 mb-1">CPF</label>
                       <input 
                         type="text" 
-                        value={formData.cpf || ""}
+                        required
+                        value={formatCPF(formData.cpf || "")}
                         onChange={(e) => handleInputChange("cpf", e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                       />
@@ -365,7 +431,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                       <label className="block text-sm font-medium text-slate-700 mb-1">Telefone</label>
                       <input 
                         type="text" 
-                        value={formData.telefone || ""}
+                        value={formatPhone(formData.telefone || "")}
                         onChange={(e) => handleInputChange("telefone", e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm transition-colors"
                       />
