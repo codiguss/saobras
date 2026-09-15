@@ -32,7 +32,7 @@ export type Matricula = {
   data_matricula?: string | null;
   cursos?: {
     titulo: string;
-  } | null;
+  }[] | null;
 };
 
 const AVAILABLE_TAGS = [
@@ -564,14 +564,14 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                             <div>
                               <div className="flex justify-between items-start mb-2">
                                 <p className="font-bold text-slate-900 text-sm">
-                                  {mat.cursos?.titulo || "Curso não especificado"}
+                                  {mat.cursos?.[0]?.titulo || "Curso não especificado"}
                                 </p>
                                 <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-800">
                                   Matrícula
                                 </span>
                               </div>
                               <p className="text-xs text-slate-500">
-                                {mat.cursos?.titulo ? `Curso: ${mat.cursos.titulo}` : "Curso não disponível"}
+                                {mat.cursos?.[0]?.titulo ? `Curso: ${mat.cursos.titulo}` : "Curso não disponível"}
                               </p>
                               {mat.data_matricula && (
                                 <p className="text-xs text-slate-400 mt-2">
