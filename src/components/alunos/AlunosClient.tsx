@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { X, Edit2, Trash2, User, Phone, MapPin, Mail, Save, AlertCircle, Search } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Edit2, Trash2, User, Phone, MapPin, Mail, Save, AlertCircle, Search, BookOpen } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -21,7 +21,26 @@ export type Aluno = {
   criado_por: string | null;
   criado_em: string;
   nis: boolean;
+  tags_perfil?: string[] | null;
+  matriculas?: Matricula[];
 };
+
+export type Matricula = {
+  id: string;
+  status: string | null;
+  data_matricula?: string | null;
+  turmas?: {
+    nome: string;
+  } | null;
+  cursos?: {
+    nome: string;
+  } | null;
+};
+
+const AVAILABLE_TAGS = [
+  { label: "Deficiência Física", color: "bg-blue-100 text-blue-800 border-blue-200" },
+  { label: "Deficiência Intelectual/Mental", color: "bg-purple-100 text-purple-800 border-purple-200" }
+];
 
 export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   const router = useRouter();
@@ -31,6 +50,29 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   // Estados para controlar os fluxos do modal
   const [isEditing, setIsEditing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  
+  // Estado de Matrículas
+  const [matriculas, setMatriculas] = useState<Matricula[]>([]);
+  const [isLoadingMatriculas, setIsLoadingMatriculas] = useState(false);
+
+  useEffect(() => {
+    if (selectedAluno && !isEditing) {
+      const fetchMatriculas = async () => {
+        setIsLoadingMatriculas(true);
+        // Tenta buscar as matrículas com os dados da turma e do curso relacionados
+        const { data, error } = await supabase
+          .from("matriculas")
+          .select("*, turmas(nome), cursos(nome)")
+          .eq("aluno_id", selectedAluno.id);
+          
+        if (!error && data) {
+          setMatriculas(data);
+        }
+        setIsLoadingMatriculas(false);
+      };
+      fetchMatriculas();
+    }
+  }, [selectedAluno, isEditing]);
   
   const [formData, setFormData] = useState<Partial<Aluno>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -164,7 +206,8 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
       bairro: formData.bairro,
       municipio: formData.municipio,
       status_estudante: formData.status_estudante,
-      nis: formData.nis
+      nis: formData.nis,
+      tags_perfil: formData.tags_perfil || []
     };
     
     if (isCreating) {
@@ -198,6 +241,15 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     }
     
     setFormData(prev => ({ ...prev, [field]: finalValue }));
+  };
+
+  const handleTagToggle = (tag: string) => {
+    const currentTags = formData.tags_perfil || [];
+    if (currentTags.includes(tag)) {
+      setFormData(prev => ({ ...prev, tags_perfil: currentTags.filter(t => t !== tag) }));
+    } else {
+      setFormData(prev => ({ ...prev, tags_perfil: [...currentTags, tag] }));
+    }
   };
 
   const showModal = !!selectedAluno || isCreating;
@@ -257,10 +309,10 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                   <td className="px-6 py-4 text-slate-500">{aluno.bairro || "Não informado"}</td>
                   <td className="px-6 py-4 text-slate-500">{aluno.telefone ? formatPhone(aluno.telefone) : "Não informado"}</td>
                   <td className="px-6 py-4">
-                    {aluno.status_estudante ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Estudante</span>
+                    {aluno.matriculas && aluno.matriculas.length > 0 ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Ativo</span>
                     ) : (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">Não é estudante</span>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">Não Ativo</span>
                     )}
                   </td>
                 </tr>
@@ -351,12 +403,75 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                             </div>
                           </div>
                         )}
-                        <div className="pt-3 mt-3 border-t border-slate-200">
-                          <p className="text-xs text-slate-500 mb-1">Beneficiário NIS?</p>
-                          <p className="text-sm font-medium text-slate-900">{selectedAluno.nis ? "Sim (Cadastrado)" : "Não"}</p>
-                        </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Necessidades e Perfil (View) */}
+                  {selectedAluno.tags_perfil && selectedAluno.tags_perfil.length > 0 && (
+                    <div className="mt-8 pt-8 border-t border-slate-200">
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4">
+                        Perfil e Necessidades Específicas
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedAluno.tags_perfil.map(tag => {
+                          const foundTag = AVAILABLE_TAGS.find(t => t.label === tag);
+                          const colorClass = foundTag ? foundTag.color : "bg-slate-100 text-slate-800 border-slate-200";
+                          return (
+                            <span key={tag} className={`px-3 py-1 rounded-full text-xs font-bold border ${colorClass}`}>
+                              {tag}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Matrículas do Aluno */}
+                  <div className="mt-8 pt-8 border-t border-slate-200">
+                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4">
+                      <BookOpen className="w-5 h-5 text-blue-600" />
+                      Matrículas do Aluno
+                    </h4>
+                    
+                    {isLoadingMatriculas ? (
+                      <div className="text-sm text-slate-500 animate-pulse bg-slate-50 p-4 rounded-md border border-slate-100 text-center">
+                        Carregando matrículas...
+                      </div>
+                    ) : matriculas.length === 0 ? (
+                      <div className="bg-slate-50 p-4 rounded-md border border-slate-100 text-sm text-slate-500 text-center">
+                        Este aluno não possui matrículas no momento.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {matriculas.map((mat) => (
+                          <div key={mat.id} className="bg-white border border-slate-200 p-4 rounded-md shadow-sm flex flex-col justify-between">
+                            <div>
+                              <div className="flex justify-between items-start mb-2">
+                                <p className="font-bold text-slate-900 text-sm">
+                                  {mat.turmas?.nome || "Turma não especificada"}
+                                </p>
+                                <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
+                                  mat.status === 'Ativa' || mat.status === 'Ativo' 
+                                    ? 'bg-emerald-100 text-emerald-800' 
+                                    : 'bg-slate-100 text-slate-800'
+                                }`}>
+                                  {mat.status || "Status Desconhecido"}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500">
+                                {mat.cursos?.nome ? `Curso: ${mat.cursos.nome}` : "Detalhes não disponíveis"}
+                              </p>
+                              {mat.data_matricula && (
+                                <p className="text-xs text-slate-400 mt-2">
+                                  Matriculado em: {new Date(mat.data_matricula).toLocaleDateString('pt-BR')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -454,17 +569,18 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                       </div>
                     </div>
 
-                    <div className="flex gap-6 mt-4 p-4 bg-slate-50 border border-slate-200 rounded-md">
-                      <label className={`flex items-center gap-2 text-sm font-medium text-slate-700 ${!hasAge ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                        <input type="checkbox" disabled={!hasAge} checked={!!formData.status_estudante} onChange={(e) => handleInputChange("status_estudante", e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 disabled:opacity-50" />
-                        É Estudante?
-                      </label>
-                      <label className={`flex items-center gap-2 text-sm font-medium text-slate-700 ${!hasAge ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                        <input type="checkbox" disabled={!hasAge} checked={!!formData.nis} onChange={(e) => handleInputChange("nis", e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 disabled:opacity-50" />
-                        Beneficiário do NIS?
-                      </label>
+                    <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-md">
+                      <div className="flex gap-6 flex-wrap">
+                        <label className={`flex items-center gap-2 text-sm font-medium text-slate-700 ${!hasAge ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                          <input type="checkbox" disabled={!hasAge} checked={(formData.tags_perfil || []).includes("Deficiência Física")} onChange={(e) => handleTagToggle("Deficiência Física")} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 disabled:opacity-50" />
+                          Deficiência Física
+                        </label>
+                        <label className={`flex items-center gap-2 text-sm font-medium text-slate-700 ${!hasAge ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                          <input type="checkbox" disabled={!hasAge} checked={(formData.tags_perfil || []).includes("Deficiência Intelectual/Mental")} onChange={(e) => handleTagToggle("Deficiência Intelectual/Mental")} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 disabled:opacity-50" />
+                          Deficiência Intelectual/Mental
+                        </label>
+                      </div>
                     </div>
-
                   </div>
                 </form>
               )}

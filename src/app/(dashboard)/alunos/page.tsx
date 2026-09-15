@@ -6,7 +6,12 @@ export const revalidate = 0; // Para sempre buscar dados novos durante o desenvo
 export default async function AlunosPage() {
   const { data: alunos, error } = await supabase
     .from("alunos")
-    .select("*")
+    .select(`
+      *,
+      matriculas (
+        id
+      )
+    `)
     .order("nome_completo", { ascending: true });
 
   if (error) {
