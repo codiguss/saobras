@@ -32,38 +32,38 @@ type Matricula = {
   }[] | null;
 };
 
-export default function AlunosClient({
-  alunos: alunosIniciais,
-}: {
-  alunos: Aluno[];
-}) {
-  const [alunos, setAlunos] = useState<Aluno[]>(alunosIniciais);
+export function AlunosClient() {
+  const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [cursos, setCursos] = useState<Curso[]>([]);
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
 
   const [busca, setBusca] = useState("");
-  const [alunoSelecionado, setAlunoSelecionado] =
-    useState<Aluno | null>(null);
+  const [alunoSelecionado, setAlunoSelecionado] = useState<Aluno | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [carregandoDetalhes, setCarregandoDetalhes] = useState(false);
 
-  const [carregando, setCarregando] = useState(false);
-  const [carregandoDetalhes, setCarregandoDetalhes] =
-    useState(false);
-
-  /*
-   * Atualiza os alunos caso o Server Component
-   * envie uma nova lista depois de um refresh.
-   */
   useEffect(() => {
-    setAlunos(alunosIniciais);
-    setCarregando(false);
-  }, [alunosIniciais]);
-
-  /*
-   * Carrega os cursos disponíveis.
-   */
-  useEffect(() => {
+    carregarAlunos();
     carregarCursos();
   }, []);
+
+  async function carregarAlunos() {
+    setCarregando(true);
+
+    const { data, error } = await supabase
+      .from("alunos")
+      .select("*")
+      .order("nome_completo", { ascending: true });
+
+    if (error) {
+      console.error("Erro ao carregar alunos:", error);
+      setAlunos([]);
+    } else {
+      setAlunos(data || []);
+    }
+
+    setCarregando(false);
+  }
 
   async function carregarCursos() {
     const { data, error } = await supabase
@@ -74,16 +74,11 @@ export default function AlunosClient({
     if (error) {
       console.error("Erro ao carregar cursos:", error);
       setCursos([]);
-      return;
+    } else {
+      setCursos(data || []);
     }
-
-    setCursos(data || []);
   }
 
-  /*
-   * Abre os detalhes do aluno e busca
-   * as matrículas relacionadas.
-   */
   async function abrirDetalhes(aluno: Aluno) {
     setAlunoSelecionado(aluno);
     setCarregandoDetalhes(true);
@@ -103,11 +98,7 @@ export default function AlunosClient({
       .eq("aluno_id", aluno.id);
 
     if (error) {
-      console.error(
-        "Erro ao carregar matrícula:",
-        error
-      );
-
+      console.error("Erro ao carregar matrícula:", error);
       setMatriculas([]);
     } else {
       setMatriculas(data || []);
@@ -121,32 +112,16 @@ export default function AlunosClient({
     setMatriculas([]);
   }
 
-  /*
-   * Filtra os alunos pelo nome, CPF ou e-mail.
-   */
   const alunosFiltrados = alunos.filter((aluno) => {
-    const termo = busca.toLowerCase().trim();
-
-    if (!termo) {
-      return true;
-    }
+    const termo = busca.toLowerCase();
 
     return (
-      aluno.nome_completo
-        ?.toLowerCase()
-        .includes(termo) ||
-      aluno.cpf
-        ?.toLowerCase()
-        .includes(termo) ||
-      aluno.email
-        ?.toLowerCase()
-        .includes(termo)
+      aluno.nome_completo?.toLowerCase().includes(termo) ||
+      aluno.cpf?.toLowerCase().includes(termo) ||
+      aluno.email?.toLowerCase().includes(termo)
     );
   });
 
-  /*
-   * Tela de detalhes do aluno.
-   */
   if (alunoSelecionado) {
     return (
       <main className="p-6">
@@ -165,17 +140,12 @@ export default function AlunosClient({
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <strong>Nome:</strong>
-              <p>
-                {alunoSelecionado.nome_completo}
-              </p>
+              <p>{alunoSelecionado.nome_completo}</p>
             </div>
 
             <div>
               <strong>CPF:</strong>
-              <p>
-                {alunoSelecionado.cpf ||
-                  "Não informado"}
-              </p>
+              <p>{alunoSelecionado.cpf || "Não informado"}</p>
             </div>
 
             <div>
@@ -189,40 +159,35 @@ export default function AlunosClient({
             <div>
               <strong>Telefone:</strong>
               <p>
-                {alunoSelecionado.telefone ||
-                  "Não informado"}
+                {alunoSelecionado.telefone || "Não informado"}
               </p>
             </div>
 
             <div>
               <strong>E-mail:</strong>
               <p>
-                {alunoSelecionado.email ||
-                  "Não informado"}
+                {alunoSelecionado.email || "Não informado"}
               </p>
             </div>
 
             <div>
               <strong>Idade:</strong>
               <p>
-                {alunoSelecionado.idade ??
-                  "Não informado"}
+                {alunoSelecionado.idade ?? "Não informado"}
               </p>
             </div>
 
             <div>
               <strong>Bairro:</strong>
               <p>
-                {alunoSelecionado.bairro ||
-                  "Não informado"}
+                {alunoSelecionado.bairro || "Não informado"}
               </p>
             </div>
 
             <div>
               <strong>Município:</strong>
               <p>
-                {alunoSelecionado.municipio ||
-                  "Não informado"}
+                {alunoSelecionado.municipio || "Não informado"}
               </p>
             </div>
           </div>
@@ -233,15 +198,10 @@ export default function AlunosClient({
             </h2>
 
             {carregandoDetalhes ? (
-              <p>
-                Carregando matrícula...
-              </p>
+              <p>Carregando matrícula...</p>
             ) : matriculas.length === 0 ? (
               <div className="rounded-lg border p-4">
-                <p>
-                  Nenhum curso encontrado para
-                  este aluno.
-                </p>
+                <p>Nenhum curso encontrado para este aluno.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -260,9 +220,7 @@ export default function AlunosClient({
                         Matrícula realizada em:{" "}
                         {new Date(
                           matricula.data_matricula
-                        ).toLocaleDateString(
-                          "pt-BR"
-                        )}
+                        ).toLocaleDateString("pt-BR")}
                       </p>
                     )}
                   </div>
@@ -275,9 +233,6 @@ export default function AlunosClient({
     );
   }
 
-  /*
-   * Tela principal de alunos.
-   */
   return (
     <main className="p-6">
       <div className="mb-6">
@@ -286,8 +241,7 @@ export default function AlunosClient({
         </h1>
 
         <p className="text-gray-500">
-          Consulte os alunos cadastrados e suas
-          matrículas.
+          Consulte os alunos cadastrados e suas matrículas.
         </p>
       </div>
 
@@ -296,9 +250,7 @@ export default function AlunosClient({
           type="text"
           placeholder="Pesquisar aluno..."
           value={busca}
-          onChange={(e) =>
-            setBusca(e.target.value)
-          }
+          onChange={(e) => setBusca(e.target.value)}
           className="w-full rounded-lg border px-4 py-3 outline-none focus:ring-2"
         />
       </div>
@@ -314,25 +266,11 @@ export default function AlunosClient({
           <table className="w-full">
             <thead>
               <tr className="border-b bg-gray-50 text-left">
-                <th className="p-4">
-                  Nome
-                </th>
-
-                <th className="p-4">
-                  CPF
-                </th>
-
-                <th className="p-4">
-                  Telefone
-                </th>
-
-                <th className="p-4">
-                  Status
-                </th>
-
-                <th className="p-4">
-                  Ação
-                </th>
+                <th className="p-4">Nome</th>
+                <th className="p-4">CPF</th>
+                <th className="p-4">Telefone</th>
+                <th className="p-4">Status</th>
+                <th className="p-4">Ação</th>
               </tr>
             </thead>
 
@@ -368,9 +306,7 @@ export default function AlunosClient({
 
                   <td className="p-4">
                     <button
-                      onClick={() =>
-                        abrirDetalhes(aluno)
-                      }
+                      onClick={() => abrirDetalhes(aluno)}
                       className="rounded-lg border px-3 py-2 hover:bg-gray-100"
                     >
                       Ver detalhes
