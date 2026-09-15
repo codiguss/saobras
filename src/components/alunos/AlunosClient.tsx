@@ -23,18 +23,16 @@ export type Aluno = {
   nis: boolean;
   tags_perfil?: string[] | null;
   matriculas?: Matricula[];
+  curso_id?: string | null;
 };
 
 export type Matricula = {
   id: string;
-  aluno_id?: string;
   curso_id: string;
   data_matricula?: string | null;
-};
-
-export type Curso = {
-  id: string;
-  titulo: string;
+  cursos?: {
+    titulo: string;
+  } | null;
 };
 
 const AVAILABLE_TAGS = [
@@ -54,11 +52,30 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   // Estado de Matrículas
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
   const [isLoadingMatriculas, setIsLoadingMatriculas] = useState(false);
-  const [cursos, setCursos] = useState<Curso[]>([]);
-  const [cursoSelecionado, setCursoSelecionado] = useState("");
+
+  // Cursos disponíveis para vincular o aluno à matrícula
+  const [cursos, setCursos] = useState<{ id: string; titulo: string }[]>([]);
   const [isLoadingCursos, setIsLoadingCursos] = useState(false);
 
-  // Carrega os cursos cadastrados no sistema para o cadastro do aluno.
+  useEffect(() => {
+    if (selectedAluno && !isEditing) {
+      const fetchMatriculas = async () => {
+        setIsLoadingMatriculas(true);
+        // Tenta buscar as matrículas com os dados da turma e do curso relacionados
+        const { data, error } = await supabase
+          .from("matriculas")
+          .select("id, curso_id, data_matricula, cursos(titulo)")
+          .eq("aluno_id", selectedAluno.id);
+          
+        if (!error && data) {
+          setMatriculas(data);
+        }
+        setIsLoadingMatriculas(false);
+      };
+      fetchMatriculas();
+    }
+  }, [selectedAluno, isEditing]);
+
   useEffect(() => {
     const fetchCursos = async () => {
       setIsLoadingCursos(true);
@@ -67,43 +84,16 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
         .select("id, titulo")
         .order("titulo", { ascending: true });
 
-      if (error) {
-        console.error("Erro ao carregar cursos:", error);
-      } else {
-        setCursos(data || []);
+      if (!error && data) {
+        setCursos(data);
+      } else if (error) {
+        console.error("Erro ao carregar cursos:", error.message);
       }
       setIsLoadingCursos(false);
     };
 
     fetchCursos();
   }, []);
-
-  useEffect(() => {
-    if (selectedAluno && !isEditing) {
-      const fetchMatriculas = async () => {
-        setIsLoadingMatriculas(true);
-
-        // A tabela matriculas deste projeto usa apenas aluno_id, curso_id e data_matricula.
-        const { data, error } = await supabase
-          .from("matriculas")
-          .select("id, aluno_id, curso_id, data_matricula")
-          .eq("aluno_id", selectedAluno.id)
-          .order("data_matricula", { ascending: false });
-
-        if (!error && data) {
-          setMatriculas(data);
-        } else if (error) {
-          console.error("Erro ao carregar matrículas:", error);
-          setMatriculas([]);
-        }
-
-        setIsLoadingMatriculas(false);
-      };
-      fetchMatriculas();
-    } else if (!selectedAluno) {
-      setMatriculas([]);
-    }
-  }, [selectedAluno, isEditing]);
   
   const [formData, setFormData] = useState<Partial<Aluno>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -143,9 +133,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
 
   const startCreating = () => {
     setSelectedAluno(null);
-    setMatriculas([]);
-    setCursoSelecionado("");
-    setFormData({ status_estudante: true, nis: false, idade: undefined });
+    setFormData({ status_estudante: true, nis: false, idade: undefined, curso_id: "" });
     setIsCreating(true);
     setIsEditing(true);
   };
@@ -153,7 +141,8 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   const startEditing = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setFormData(selectedAluno || {});
+    const cursoAtual = matriculas.length > 0 ? matriculas[0].curso_id : "";
+    setFormData({ ...(selectedAluno || {}), curso_id: cursoAtual });
     setIsEditing(true);
   };
 
@@ -161,7 +150,6 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     setSelectedAluno(null);
     setIsEditing(false);
     setIsCreating(false);
-    setCursoSelecionado("");
     setShowDeleteConfirm(false);
   };
 
@@ -226,76 +214,134 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (isCreating && !cursoSelecionado) {
+    if (!formData.curso_id) {
       alert("Selecione o curso do aluno antes de salvar.");
       return;
     }
 
     setIsSaving(true);
 
-    const savePayload = {
-      nome_completo: formData.nome_completo,
-      cpf: formData.cpf,
-      cpf_responsavel: formData.cpf_responsavel,
-      telefone: formData.telefone,
-      telefone_secundario: formData.telefone_secundario,
-      email: formData.email,
-      idade: formData.idade,
-      nome_responsavel: formData.nome_responsavel,
-      bairro: formData.bairro,
-      municipio: formData.municipio,
-      status_estudante: formData.status_estudante,
-      nis: formData.nis,
-      tags_perfil: formData.tags_perfil || []
-    };
+    try {
+      const savePayload = {
+        nome_completo: formData.nome_completo,
+        cpf: formData.cpf,
+        cpf_responsavel: formData.cpf_responsavel,
+        telefone: formData.telefone,
+        telefone_secundario: formData.telefone_secundario,
+        email: formData.email,
+        idade: formData.idade,
+        nome_responsavel: formData.nome_responsavel,
+        bairro: formData.bairro,
+        municipio: formData.municipio,
+        status_estudante: formData.status_estudante,
+        nis: formData.nis,
+        tags_perfil: formData.tags_perfil || []
+      };
 
-    let dbError: any = null;
+      let alunoId = selectedAluno?.id;
 
-    if (isCreating) {
-      // 1. Cria o aluno.
-      const { data: novoAluno, error: alunoError } = await supabase
-        .from("alunos")
-        .insert([savePayload])
-        .select("id")
-        .single();
+      if (isCreating) {
+        // 1. Cria o aluno e recupera o ID gerado
+        const { data: novoAluno, error: alunoError } = await supabase
+          .from("alunos")
+          .insert([savePayload])
+          .select("id")
+          .single();
 
-      if (alunoError) {
-        dbError = alunoError;
-      } else if (novoAluno) {
-        // 2. Cria a matrícula relacionando o aluno ao curso escolhido.
-        // Não usamos turma_id nem status porque esses campos não existem na tabela atual.
+        if (alunoError) {
+          throw new Error(alunoError.message);
+        }
+
+        alunoId = novoAluno.id;
+
+        // 2. Descobre o usuário logado para preencher operador_id
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          throw new Error("Não foi possível identificar o usuário logado. Faça login novamente.");
+        }
+
+        // 3. Cria a matrícula vinculando ALUNO -> CURSO
         const { error: matriculaError } = await supabase
           .from("matriculas")
           .insert([{
-            aluno_id: novoAluno.id,
-            curso_id: cursoSelecionado,
+            aluno_id: alunoId,
+            curso_id: formData.curso_id,
+            operador_id: user.id,
             data_matricula: new Date().toISOString()
           }]);
 
         if (matriculaError) {
-          // Se a matrícula falhar, tenta remover o aluno recém-criado para não deixar
-          // um cadastro sem vínculo com curso.
-          await supabase.from("alunos").delete().eq("id", novoAluno.id);
-          dbError = matriculaError;
+          // Tenta remover o aluno criado para não deixar cadastro sem matrícula.
+          await supabase.from("alunos").delete().eq("id", alunoId);
+          throw new Error("Aluno criado, mas a matrícula não pôde ser criada: " + matriculaError.message);
+        }
+      } else if (selectedAluno) {
+        // Edita os dados do aluno
+        const { error: alunoError } = await supabase
+          .from("alunos")
+          .update(savePayload)
+          .eq("id", selectedAluno.id);
+
+        if (alunoError) {
+          throw new Error(alunoError.message);
+        }
+
+        // Se o curso foi alterado, atualiza a primeira matrícula do aluno.
+        const { data: matriculasExistentes, error: buscaMatriculaError } = await supabase
+          .from("matriculas")
+          .select("id, curso_id")
+          .eq("aluno_id", selectedAluno.id)
+          .order("data_matricula", { ascending: false });
+
+        if (buscaMatriculaError) {
+          throw new Error("Não foi possível consultar a matrícula: " + buscaMatriculaError.message);
+        }
+
+        const matriculaAtual = matriculasExistentes?.[0];
+
+        if (matriculaAtual) {
+          if (matriculaAtual.curso_id !== formData.curso_id) {
+            const { error: updateMatriculaError } = await supabase
+              .from("matriculas")
+              .update({ curso_id: formData.curso_id })
+              .eq("id", matriculaAtual.id);
+
+            if (updateMatriculaError) {
+              throw new Error("Aluno atualizado, mas não foi possível alterar o curso: " + updateMatriculaError.message);
+            }
+          }
+        } else {
+          // Caso um aluno antigo ainda não tenha matrícula, cria uma agora.
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+          if (userError || !user) {
+            throw new Error("Não foi possível identificar o usuário logado. Faça login novamente.");
+          }
+
+          const { error: matriculaError } = await supabase
+            .from("matriculas")
+            .insert([{
+              aluno_id: selectedAluno.id,
+              curso_id: formData.curso_id,
+              operador_id: user.id,
+              data_matricula: new Date().toISOString()
+            }]);
+
+          if (matriculaError) {
+            throw new Error("Aluno atualizado, mas a matrícula não pôde ser criada: " + matriculaError.message);
+          }
         }
       }
-    } else if (selectedAluno) {
-      const { error } = await supabase
-        .from("alunos")
-        .update(savePayload)
-        .eq("id", selectedAluno.id);
-      dbError = error;
+
+      closePanel();
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro desconhecido ao salvar.";
+      alert("Erro ao salvar: " + message);
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsSaving(false);
-
-    if (dbError) {
-      alert("Erro ao salvar: " + dbError.message);
-      return;
-    }
-
-    closePanel();
-    router.refresh();
   };
 
   const handleInputChange = (field: keyof Aluno, value: string | number | boolean | null) => {
@@ -518,14 +564,14 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                             <div>
                               <div className="flex justify-between items-start mb-2">
                                 <p className="font-bold text-slate-900 text-sm">
-                                  {cursos.find((curso) => curso.id === mat.curso_id)?.titulo || "Curso não encontrado"}
+                                  {mat.cursos?.titulo || "Curso não especificado"}
                                 </p>
-                                <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800">
-                                  Matriculado
+                                <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-800">
+                                  Matrícula
                                 </span>
                               </div>
                               <p className="text-xs text-slate-500">
-                                Curso selecionado no cadastro
+                                {mat.cursos?.titulo ? `Curso: ${mat.cursos.titulo}` : "Curso não disponível"}
                               </p>
                               {mat.data_matricula && (
                                 <p className="text-xs text-slate-400 mt-2">
@@ -634,38 +680,28 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                       </div>
                     </div>
 
-                    {isCreating && (
-                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
-                        <label htmlFor="curso-aluno" className="block text-sm font-bold text-blue-900 mb-1">
-                          Curso do aluno <span className="text-red-600">*</span>
-                        </label>
-                        <p className="text-xs text-blue-700 mb-3">
-                          Selecione um dos cursos cadastrados. Ao salvar, será criada automaticamente a matrícula do aluno nesse curso.
-                        </p>
-                        <select
-                          id="curso-aluno"
-                          required
-                          disabled={!hasAge || isLoadingCursos}
-                          value={cursoSelecionado}
-                          onChange={(e) => setCursoSelecionado(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-blue-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm disabled:bg-slate-100"
-                        >
-                          <option value="">
-                            {isLoadingCursos ? "Carregando cursos..." : "Selecione o curso"}
-                          </option>
-                          {cursos.map((curso) => (
-                            <option key={curso.id} value={curso.id}>
-                              {curso.titulo}
-                            </option>
-                          ))}
-                        </select>
-                        {!isLoadingCursos && cursos.length === 0 && (
-                          <p className="text-xs text-red-600 mt-2">
-                            Nenhum curso cadastrado. Cadastre um curso primeiro na página Cursos.
-                          </p>
-                        )}
+                    {/* Curso do aluno / matrícula */}
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+                      <div className="flex items-center gap-2 mb-2">
+                        <BookOpen className="w-4 h-4 text-blue-600" />
+                        <label className="block text-sm font-bold text-blue-900">Curso do aluno</label>
                       </div>
-                    )}
+                      <select
+                        required
+                        disabled={!hasAge || isLoadingCursos}
+                        value={formData.curso_id || ""}
+                        onChange={(e) => handleInputChange("curso_id", e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-blue-200 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 text-sm disabled:bg-blue-50/50"
+                      >
+                        <option value="">{isLoadingCursos ? "Carregando cursos..." : "Selecione um curso"}</option>
+                        {cursos.map((curso) => (
+                          <option key={curso.id} value={curso.id}>
+                            {curso.titulo}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-blue-700 mt-2">O curso selecionado será usado para criar ou atualizar a matrícula do aluno.</p>
+                    </div>
 
                     <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-md">
                       <div className="flex gap-6 flex-wrap">
