@@ -571,7 +571,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                                 </span>
                               </div>
                               <p className="text-xs text-slate-500">
-                                {mat.cursos?.[0]?.titulo ? `Curso: ${mat.cursos.titulo}` : "Curso não disponível"}
+                                {mat.cursos?.[0]?.titulo ? `Curso: ${mat.cursos[0].titulo}` : "Curso não disponível"}
                               </p>
                               {mat.data_matricula && (
                                 <p className="text-xs text-slate-400 mt-2">
