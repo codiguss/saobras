@@ -1,9 +1,11 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import { CursosClient } from "@/components/cursos/CursosClient";
 
 export const revalidate = 0; // Disable cache during development
 
 export default async function CursosPage() {
+  const supabase = await createClient();
+  
   const { data: cursos, error: cursosError } = await supabase
     .from("cursos")
     .select("*")

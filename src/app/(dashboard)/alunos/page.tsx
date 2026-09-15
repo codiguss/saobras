@@ -1,9 +1,11 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import { AlunosClient } from "@/components/alunos/AlunosClient";
 
-export const revalidate = 0; // Para sempre buscar dados novos durante o desenvolvimento
+export const revalidate = 0; // Disable cache during development
 
 export default async function AlunosPage() {
+  const supabase = await createClient();
+
   const { data: alunos, error } = await supabase
     .from("alunos")
     .select(`
