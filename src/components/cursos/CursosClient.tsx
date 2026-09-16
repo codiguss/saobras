@@ -27,55 +27,15 @@ cursos?: { titulo: string } | null;
 };
 
 const DIAS_SEMANA = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
-
+const LIMITE_VAGAS = 10;
 const TURNOS = ["Manhã", "Tarde"];
 
 const HORARIOS = [
-{
-turno: "Manhã",
-label: "08:30 - 10:00",
-inicio: "08:30",
-fim: "10:00",
-},
-{
-turno: "Manhã",
-label: "10:00 - 11:30",
-inicio: "10:00",
-fim: "11:30",
-},
-{
-turno: "Tarde",
-label: "14:30 - 16:00",
-inicio: "14:30",
-fim: "16:00",
-},
-{
-turno: "Tarde",
-label: "16:00 - 17:30",
-inicio: "16:00",
-fim: "17:30",
-},
+{ turno: "Manhã", label: "08:30 - 10:00", inicio: "08:30", fim: "10:00" },
+{ turno: "Manhã", label: "10:00 - 11:30", inicio: "10:00", fim: "11:30" },
+{ turno: "Tarde", label: "14:30 - 16:00", inicio: "14:30", fim: "16:00" },
+{ turno: "Tarde", label: "16:00 - 17:30", inicio: "16:00", fim: "17:30" },
 ] as const;
-
-/*
-
-* ==========================================================
-* LIMITE DE ALUNOS POR TURMA
-* ==========================================================
-*
-* Todas as turmas começam com 10 vagas.
-*
-* Exemplo:
-*
-* 0 alunos = 10 vagas
-* 1 aluno  = 9 vagas
-* 2 alunos = 8 vagas
-* ...
-* 10 alunos = 0 vagas
-*
-* A quantidade é calculada usando a tabela "matriculas".
-  */
-  const LIMITE_VAGAS = 10;
 
 function getHorarioByLabel(label: string) {
 return HORARIOS.find((h) => h.label === label);
@@ -86,9 +46,7 @@ if (turma.horario) {
 const h = HORARIOS.find((h) => h.label === turma.horario);
 
 ```
-if (h) {
-  return h.label;
-}
+if (h) return h.label;
 
 return turma.horario;
 ```
@@ -107,23 +65,13 @@ const horaBrasil = new Intl.DateTimeFormat("pt-BR", {
 }).format(data);
 
 if (turma.turno === "Manhã") {
-  if (horaBrasil === "08:30") {
-    return "08:30 - 10:00";
-  }
-
-  if (horaBrasil === "10:00") {
-    return "10:00 - 11:30";
-  }
+  if (horaBrasil === "08:30") return "08:30 - 10:00";
+  if (horaBrasil === "10:00") return "10:00 - 11:30";
 }
 
 if (turma.turno === "Tarde") {
-  if (horaBrasil === "14:30") {
-    return "14:30 - 16:00";
-  }
-
-  if (horaBrasil === "16:00") {
-    return "16:00 - 17:30";
-  }
+  if (horaBrasil === "14:30") return "14:30 - 16:00";
+  if (horaBrasil === "16:00") return "16:00 - 17:30";
 }
 ```
 
@@ -144,62 +92,46 @@ throw new Error("Horário selecionado é inválido.");
 const hoje = new Date();
 
 const ano = hoje.getFullYear();
-
 const mes = String(hoje.getMonth() + 1).padStart(2, "0");
-
 const dia = String(hoje.getDate()).padStart(2, "0");
 
-const inicio =
-`${ano}-${mes}-${dia}T${horario.inicio}:00-03:00`;
+const inicio = `${ano}-${mes}-${dia}T${horario.inicio}:00-03:00`;
+const fim = `${ano}-${mes}-${dia}T${horario.fim}:00-03:00`;
 
-const fim =
-`${ano}-${mes}-${dia}T${horario.fim}:00-03:00`;
-
-return {
-inicio,
-fim,
-};
+return { inicio, fim };
 }
 
 const COLOR_THEMES = {
 blue: {
 cardBorder: "border-t-blue-500",
-gridCard:
-"bg-blue-50 border-blue-400 hover:bg-blue-100",
+gridCard: "bg-blue-50 border-blue-400 hover:bg-blue-100",
 gridTextSub: "text-blue-700",
 listCard: "border-l-blue-400",
-badge:
-"bg-blue-100 text-blue-700 border-blue-200",
+badge: "bg-blue-100 text-blue-700 border-blue-200",
 },
 
 green: {
 cardBorder: "border-t-emerald-500",
-gridCard:
-"bg-emerald-50 border-emerald-400 hover:bg-emerald-100",
+gridCard: "bg-emerald-50 border-emerald-400 hover:bg-emerald-100",
 gridTextSub: "text-emerald-700",
 listCard: "border-l-emerald-400",
-badge:
-"bg-emerald-100 text-emerald-700 border-emerald-200",
+badge: "bg-emerald-100 text-emerald-700 border-emerald-200",
 },
 
 orange: {
 cardBorder: "border-t-orange-500",
-gridCard:
-"bg-orange-50 border-orange-400 hover:bg-orange-100",
+gridCard: "bg-orange-50 border-orange-400 hover:bg-orange-100",
 gridTextSub: "text-orange-700",
 listCard: "border-l-orange-400",
-badge:
-"bg-orange-100 text-orange-700 border-orange-200",
+badge: "bg-orange-100 text-orange-700 border-orange-200",
 },
 
 red: {
 cardBorder: "border-t-red-500",
-gridCard:
-"bg-red-50 border-red-400 hover:bg-red-100",
+gridCard: "bg-red-50 border-red-400 hover:bg-red-100",
 gridTextSub: "text-red-700",
 listCard: "border-l-red-400",
-badge:
-"bg-red-100 text-red-700 border-red-200",
+badge: "bg-red-100 text-red-700 border-red-200",
 },
 };
 
@@ -210,9 +142,7 @@ const getColorForId = (id: string) => {
 let hash = 0;
 
 for (let i = 0; i < id.length; i++) {
-hash =
-id.charCodeAt(i) +
-((hash << 5) - hash);
+hash = id.charCodeAt(i) + ((hash << 5) - hash);
 }
 
 const keys = getColorKeys();
@@ -229,42 +159,22 @@ turmas: Turma[];
 }) {
 const router = useRouter();
 
-const [turmas, setTurmas] =
-useState<Turma[]>(serverTurmas);
+const [turmas, setTurmas] = useState<Turma[]>(serverTurmas);
 
-/*
+const [vagasOcupadas, setVagasOcupadas] = useState<
+Record<string, number>
 
-* Guarda quantos alunos estão matriculados
-* em cada turma.
-*
-* Exemplo:
-*
-* {
-* "id-da-turma-1": 3,
-* "id-da-turma-2": 7
-* }
-  */
-  const [vagasOcupadas, setVagasOcupadas] =
-  useState<Record<string, number>>({});
+> ({});
 
 useEffect(() => {
 setTurmas(serverTurmas);
 }, [serverTurmas]);
 
-/*
-
-* ==========================================================
-* CARREGAR MATRÍCULAS E CALCULAR VAGAS
-* ==========================================================
-  */
-  useEffect(() => {
-  let ativo = true;
+useEffect(() => {
+let ativo = true;
 
 ```
 const carregarVagas = async () => {
-```
-
-```
   if (!serverTurmas || serverTurmas.length === 0) {
     if (ativo) {
       setVagasOcupadas({});
@@ -273,13 +183,9 @@ const carregarVagas = async () => {
     return;
   }
 
-  const turmaIds =
-    serverTurmas.map((turma) => turma.id);
+  const turmaIds = serverTurmas.map((turma) => turma.id);
 
-  const {
-    data,
-    error,
-  } = await supabase
+  const { data, error } = await supabase
     .from("matriculas")
     .select("turma_id")
     .in("turma_id", turmaIds);
@@ -295,17 +201,10 @@ const carregarVagas = async () => {
 
   const contagem: Record<string, number> = {};
 
-  /*
-   * Começa todas as turmas com zero alunos.
-   */
   turmaIds.forEach((id) => {
     contagem[id] = 0;
   });
 
-  /*
-   * Conta quantas matrículas existem
-   * para cada turma.
-   */
   (data || []).forEach((matricula) => {
     if (matricula.turma_id) {
       contagem[matricula.turma_id] =
@@ -320,14 +219,6 @@ const carregarVagas = async () => {
 
 carregarVagas();
 
-/*
- * ========================================================
- * ATUALIZAÇÃO AUTOMÁTICA
- * ========================================================
- *
- * Quando uma matrícula for criada, alterada ou removida,
- * a Grade Semanal atualiza a quantidade de vagas.
- */
 const canal = supabase
   .channel("grade-semanal-matriculas")
   .on(
@@ -345,28 +236,17 @@ const canal = supabase
 
 return () => {
   ativo = false;
-
   supabase.removeChannel(canal);
 };
 ```
 
 }, [serverTurmas]);
 
-/*
-
-* ==========================================================
-* CALCULAR VAGAS DISPONÍVEIS
-* ==========================================================
-  */
-  const getVagasDisponiveis = (turma: Turma) => {
-  const ocupadas =
-  vagasOcupadas[turma.id] || 0;
+const getVagasDisponiveis = (turma: Turma) => {
+const ocupadas = vagasOcupadas[turma.id] || 0;
 
 ```
 return Math.max(
-```
-
-```
   0,
   LIMITE_VAGAS - ocupadas
 );
@@ -374,8 +254,10 @@ return Math.max(
 
 };
 
-const [activeTab, setActiveTab] =
-useState<"cursos" | "turmas">("turmas");
+const [activeTab, setActiveTab] = useState<
+"cursos" | "turmas"
+
+> ("turmas");
 
 const [isCursoModalOpen, setIsCursoModalOpen] =
 useState(false);
@@ -389,8 +271,7 @@ useState<Partial<Curso> | null>(null);
 const [editingTurma, setEditingTurma] =
 useState<Partial<Turma> | null>(null);
 
-const [isSaving, setIsSaving] =
-useState(false);
+const [isSaving, setIsSaving] = useState(false);
 
 const handleSaveCurso = async (
 e: React.FormEvent
@@ -398,9 +279,7 @@ e: React.FormEvent
 e.preventDefault();
 
 ```
-if (!editingCurso?.titulo) {
-  return;
-}
+if (!editingCurso?.titulo) return;
 
 setIsSaving(true);
 
@@ -412,12 +291,11 @@ const payload = {
 let error;
 
 if (editingCurso.id) {
-  const {
-    error: updateError,
-  } = await supabase
-    .from("cursos")
-    .update(payload)
-    .eq("id", editingCurso.id);
+  const { error: updateError } =
+    await supabase
+      .from("cursos")
+      .update(payload)
+      .eq("id", editingCurso.id);
 
   error = updateError;
 } else {
@@ -426,11 +304,10 @@ if (editingCurso.id) {
     criado_em: new Date().toISOString(),
   };
 
-  const {
-    error: insertError,
-  } = await supabase
-    .from("cursos")
-    .insert([insertPayload]);
+  const { error: insertError } =
+    await supabase
+      .from("cursos")
+      .insert([insertPayload]);
 
   error = insertError;
 }
@@ -440,7 +317,7 @@ setIsSaving(false);
 if (error) {
   alert(
     "Erro ao salvar curso: " +
-    error.message
+      error.message
   );
 
   return;
@@ -465,16 +342,15 @@ return;
 }
 
 ```
-const { error } =
-  await supabase
-    .from("cursos")
-    .delete()
-    .eq("id", id);
+const { error } = await supabase
+  .from("cursos")
+  .delete()
+  .eq("id", id);
 
 if (error) {
   alert(
     "Erro ao excluir: " +
-    error.message
+      error.message
   );
 } else {
   router.refresh();
@@ -504,65 +380,47 @@ if (
 
 setIsSaving(true);
 
-const {
-  inicio,
-  fim,
-} = criarDatasHorario(
-  editingTurma.horario
-);
+const { inicio, fim } =
+  criarDatasHorario(
+    editingTurma.horario
+  );
 
 const payload = {
   nome: editingTurma.nome,
-
-  curso_id:
-    editingTurma.curso_id,
-
-  turno:
-    editingTurma.turno,
-
+  curso_id: editingTurma.curso_id,
+  turno: editingTurma.turno,
   dias_semana:
     editingTurma.dias_semana || [],
+  horario: editingTurma.horario,
+  data_hora_inicio: inicio,
+  data_hora_fim: fim,
 
-  horario:
-    editingTurma.horario,
-
-  data_hora_inicio:
-    inicio,
-
-  data_hora_fim:
-    fim,
-
-  /*
-   * Toda turma possui capacidade máxima
-   * de 10 alunos.
-   */
+  // Toda turma começa com limite de 10 vagas.
+  // A quantidade disponível é calculada
+  // conforme as matrículas existentes.
   vagas: LIMITE_VAGAS,
 };
 
 let error;
 
 if (editingTurma.id) {
-  const {
-    error: updateError,
-  } = await supabase
-    .from("turmas")
-    .update(payload)
-    .eq("id", editingTurma.id);
+  const { error: updateError } =
+    await supabase
+      .from("turmas")
+      .update(payload)
+      .eq("id", editingTurma.id);
 
   error = updateError;
 } else {
   const insertPayload = {
     ...payload,
-
-    criado_em:
-      new Date().toISOString(),
+    criado_em: new Date().toISOString(),
   };
 
-  const {
-    error: insertError,
-  } = await supabase
-    .from("turmas")
-    .insert([insertPayload]);
+  const { error: insertError } =
+    await supabase
+      .from("turmas")
+      .insert([insertPayload]);
 
   error = insertError;
 }
@@ -572,7 +430,7 @@ setIsSaving(false);
 if (error) {
   alert(
     "Erro ao salvar turma: " +
-    error.message
+      error.message
   );
 
   return;
@@ -597,16 +455,15 @@ return;
 }
 
 ```
-const { error } =
-  await supabase
-    .from("turmas")
-    .delete()
-    .eq("id", id);
+const { error } = await supabase
+  .from("turmas")
+  .delete()
+  .eq("id", id);
 
 if (error) {
   alert(
     "Erro ao excluir: " +
-    error.message
+      error.message
   );
 } else {
   router.refresh();
@@ -619,9 +476,7 @@ const toggleDiaSemana = (
 dia: string
 ) => {
 setEditingTurma((prev) => {
-if (!prev) {
-return prev;
-}
+if (!prev) return prev;
 
 ```
   const current =
@@ -647,9 +502,7 @@ const alterarTurno = (
 turno: string
 ) => {
 setEditingTurma((prev) => {
-if (!prev) {
-return prev;
-}
+if (!prev) return prev;
 
 ```
   const primeiroHorario =
@@ -687,10 +540,16 @@ getHorarioLabel(t);
 
 };
 
-return ( <div className="flex flex-col gap-6 p-6"> <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"> <div> <h1 className="text-2xl font-bold text-slate-900">
-Cursos e Turmas </h1>
+return ( <div className="flex flex-col gap-6 p-6">
 
 ```
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+
+    <div>
+      <h1 className="text-2xl font-bold text-slate-900">
+        Cursos e Turmas
+      </h1>
+
       <p className="text-sm text-slate-500 mt-1">
         Organize os cursos, turmas,
         horários e dias das aulas.
@@ -698,7 +557,9 @@ Cursos e Turmas </h1>
     </div>
 
     <div className="flex gap-2">
+
       {activeTab === "cursos" ? (
+
         <button
           onClick={() => {
             setEditingCurso({
@@ -711,19 +572,22 @@ Cursos e Turmas </h1>
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
-
           Novo Curso
         </button>
+
       ) : (
+
         <button
           onClick={() => {
             setEditingTurma({
               nome: "",
               curso_id: "",
               turno: "Manhã",
-              horario: "08:30 - 10:00",
+              horario:
+                "08:30 - 10:00",
               dias_semana: [],
-              vagas: LIMITE_VAGAS,
+              vagas:
+                LIMITE_VAGAS,
             });
 
             setIsTurmaModalOpen(true);
@@ -731,14 +595,16 @@ Cursos e Turmas </h1>
           className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
-
           Nova Turma
         </button>
+
       )}
+
     </div>
   </div>
 
   <div className="flex border-b border-slate-200">
+
     <button
       onClick={() =>
         setActiveTab("turmas")
@@ -750,7 +616,6 @@ Cursos e Turmas </h1>
       }`}
     >
       <Calendar className="w-4 h-4" />
-
       Grade Semanal
     </button>
 
@@ -765,230 +630,377 @@ Cursos e Turmas </h1>
       }`}
     >
       <BookOpen className="w-4 h-4" />
-
-      Cursos
+      Cursos (Disciplinas)
     </button>
+
   </div>
 
-  {activeTab === "turmas" && (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+  {activeTab === "cursos" && (
+
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="p-4 text-left text-xs font-bold text-slate-500 uppercase">
-                Horário
+
+        <table className="w-full text-sm text-left">
+
+          <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+
+            <tr>
+              <th className="px-6 py-4">
+                Curso
               </th>
 
-              {DIAS_SEMANA.map(
-                (dia) => (
-                  <th
-                    key={dia}
-                    className="p-4 text-left text-xs font-bold text-slate-500 uppercase min-w-[190px]"
-                  >
-                    {dia}
-                  </th>
-                )
-              )}
+              <th className="px-6 py-4">
+                Descrição
+              </th>
+
+              <th className="px-6 py-4 text-center">
+                Turmas Ativas
+              </th>
+
+              <th className="px-6 py-4 text-right">
+                Ações
+              </th>
             </tr>
+
           </thead>
 
-          <tbody>
-            {HORARIOS.map(
-              (horario) => (
+          <tbody className="divide-y divide-slate-200">
+
+            {cursos.map((curso) => {
+
+              const turmasDoCurso =
+                turmas.filter(
+                  (t) =>
+                    t.curso_id ===
+                    curso.id
+                );
+
+              const cursoColor =
+                COLOR_THEMES[
+                  getColorForId(
+                    curso.id
+                  )
+                ];
+
+              return (
+
                 <tr
-                  key={horario.label}
-                  className="border-b border-slate-100 last:border-b-0"
+                  key={curso.id}
+                  className="hover:bg-slate-50 group"
                 >
-                  <td className="p-4 align-top bg-slate-50/50">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-slate-400" />
 
-                      <span className="text-sm font-semibold text-slate-700">
-                        {horario.label}
-                      </span>
-                    </div>
+                  <td className="px-6 py-4 font-medium text-slate-900 flex items-center gap-3">
 
-                    <span className="text-xs text-slate-400 ml-6">
-                      {horario.turno}
-                    </span>
+                    <div
+                      className={`w-3 h-3 rounded-full ${cursoColor.badge} border`}
+                      title="Cor de identificação do curso"
+                    />
+
+                    {curso.titulo}
+
                   </td>
 
-                  {DIAS_SEMANA.map(
-                    (dia) => {
-                      const turmasDaCelula =
-                        getTurmasForCell(
-                          horario.label,
-                          dia
-                        );
+                  <td className="px-6 py-4 text-slate-500 max-w-md truncate">
 
-                      return (
-                        <td
-                          key={dia}
-                          className="p-2 align-top"
-                        >
-                          <div className="min-h-[130px] space-y-2">
-                            {turmasDaCelula.map(
-                              (turma) => {
-                                const colorKey =
-                                  getColorForId(
-                                    turma.id
-                                  );
+                    {curso.descricao || (
+                      <span className="italic text-slate-400">
+                        Sem descrição
+                      </span>
+                    )}
 
-                                const turmaColor =
-                                  COLOR_THEMES[
-                                    colorKey
-                                  ];
+                  </td>
 
-                                const vagasDisponiveis =
-                                  getVagasDisponiveis(
-                                    turma
-                                  );
+                  <td className="px-6 py-4 text-center">
 
-                                const lotada =
-                                  vagasDisponiveis ===
-                                  0;
+                    <span className="inline-flex items-center justify-center bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full text-xs font-medium border border-slate-200">
 
-                                const cursoTitulo =
-                                  Array.isArray(
-                                    turma.cursos
-                                  )
-                                    ? turma.cursos[0]
-                                        ?.titulo
-                                    : turma.cursos
-                                        ?.titulo;
+                      {turmasDoCurso.length}{" "}
+                      {turmasDoCurso.length ===
+                      1
+                        ? "turma"
+                        : "turmas"}
 
-                                return (
-                                  <div
-                                    key={
-                                      turma.id
-                                    }
-                                    className={`group relative flex flex-col p-3 rounded-lg border transition-colors min-h-[120px] ${turmaColor.gridCard}`}
-                                  >
-                                    <button
-                                      onClick={(
-                                        e
-                                      ) => {
-                                        e.stopPropagation();
+                    </span>
 
-                                        setEditingTurma(
-                                          turma
-                                        );
+                  </td>
 
-                                        setIsTurmaModalOpen(
-                                          true
-                                        );
-                                      }}
-                                      className="absolute top-1.5 right-8 p-1 text-slate-400 hover:text-blue-600 hover:bg-white/80 rounded opacity-0 group-hover:opacity-100 transition-opacity z-20"
-                                      title="Editar turma"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
+                  <td className="px-6 py-4 text-right">
 
-                                    <div className="absolute top-1.5 right-1.5 z-20">
-                                      <button
-                                        onClick={(
-                                          e
-                                        ) => {
-                                          e.stopPropagation();
+                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
 
-                                          handleDeleteTurma(
-                                            turma.id
-                                          );
-                                        }}
-                                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-white/80 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                        title="Excluir turma"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
+                      <button
+                        onClick={() => {
+                          setEditingCurso(
+                            curso
+                          );
 
-                                    <div className="font-bold text-slate-800 text-sm leading-tight mb-1 pr-5">
-                                      {turma.nome}
-                                    </div>
+                          setIsCursoModalOpen(
+                            true
+                          );
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                        title="Editar curso"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
 
-                                    <div
-                                      className={`text-xs font-medium line-clamp-1 mb-2 ${turmaColor.gridTextSub}`}
-                                    >
-                                      {cursoTitulo ||
-                                        "Curso Indefinido"}
-                                    </div>
+                      <button
+                        onClick={() =>
+                          handleDeleteCurso(
+                            curso.id
+                          )
+                        }
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        title="Excluir curso"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
 
-                                    <div
-                                      className={`mt-auto inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border w-fit ${
-                                        lotada
-                                          ? "bg-red-100 text-red-700 border-red-200"
-                                          : turmaColor.badge
-                                      }`}
-                                    >
-                                      {lotada
-                                        ? "Lotada"
-                                        : `${vagasDisponiveis} vagas`}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                            )}
-                          </div>
-                        </td>
-                      );
-                    }
-                  )}
+                    </div>
+
+                  </td>
+
                 </tr>
+
+              );
+            })}
+
+            {cursos.length === 0 && (
+
+              <tr>
+
+                <td
+                  colSpan={4}
+                  className="px-6 py-12 text-center text-slate-500 bg-slate-50/50"
+                >
+                  Nenhum curso cadastrado ainda.
+                </td>
+
+              </tr>
+
+            )}
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  )}
+
+  {activeTab === "turmas" && (
+
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-x-auto">
+
+      <table className="w-full text-sm text-left min-w-[1000px]">
+
+        <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+
+          <tr>
+
+            <th className="px-4 py-4 w-32 border-r border-slate-200 text-center">
+
+              <Clock className="w-4 h-4 inline-block mr-1" />
+
+              Horário
+
+            </th>
+
+            {DIAS_SEMANA.map(
+              (dia) => (
+
+                <th
+                  key={dia}
+                  className="px-4 py-4 border-r border-slate-200 text-center uppercase tracking-wider text-xs"
+                >
+                  {dia}
+                </th>
+
               )
             )}
-          </tbody>
-        </table>
-      </div>
+
+          </tr>
+
+        </thead>
+
+        <tbody className="divide-y divide-slate-200">
+
+          {HORARIOS.map(
+            (horario) => (
+
+              <tr
+                key={horario.label}
+              >
+
+                <td className="px-4 py-6 border-r border-slate-200 bg-slate-50 text-center font-bold text-slate-700 align-middle">
+
+                  {horario.label}
+
+                  <br />
+
+                  <span className="text-xs font-normal text-slate-500">
+                    {horario.turno}
+                  </span>
+
+                </td>
+
+                {DIAS_SEMANA.map(
+                  (dia) => {
+
+                    const turmasNoDia =
+                      getTurmasForCell(
+                        horario.label,
+                        dia
+                      );
+
+                    return (
+
+                      <td
+                        key={dia}
+                        className="p-2 border-r border-slate-200 align-top bg-white min-h-[140px] h-[140px]"
+                      >
+
+                        <div className="w-full h-full flex flex-col gap-2 min-h-[100px]">
+
+                          {turmasNoDia.map(
+                            (turma) => {
+
+                              const turmaColor =
+                                COLOR_THEMES[
+                                  getColorForId(
+                                    turma.curso_id
+                                  )
+                                ];
+
+                              const match =
+                                turma.nome.match(
+                                  /\b([A-Za-z])\b/
+                                );
+
+                              const watermark =
+                                match
+                                  ? match[1].toUpperCase()
+                                  : null;
+
+                              const vagas =
+                                getVagasDisponiveis(
+                                  turma
+                                );
+
+                              return (
+
+                                <div
+                                  key={turma.id}
+                                  onClick={() => {
+                                    setEditingTurma({
+                                      ...turma,
+                                      horario:
+                                        getHorarioLabel(
+                                          turma
+                                        ),
+                                    });
+
+                                    setIsTurmaModalOpen(
+                                      true
+                                    );
+                                  }}
+                                  className={`group relative overflow-hidden flex-1 flex flex-col items-start justify-center p-3 rounded-md cursor-pointer transition-all text-left border-l-4 shadow-sm ${turmaColor.gridCard}`}
+                                >
+
+                                  {watermark && (
+
+                                    <div className="absolute -right-2 -bottom-4 text-7xl font-black text-black opacity-10 pointer-events-none select-none z-0">
+                                      {watermark}
+                                    </div>
+
+                                  )}
+
+                                  <button
+                                    onClick={(
+                                      e
+                                    ) => {
+                                      e.stopPropagation();
+
+                                      handleDeleteTurma(
+                                        turma.id
+                                      );
+                                    }}
+                                    className="absolute top-1.5 right-1.5 p-1 text-slate-400 hover:text-red-600 hover:bg-white/80 rounded opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                                    title="Excluir turma"
+                                  >
+
+                                    <Trash2 className="w-3.5 h-3.5" />
+
+                                  </button>
+
+                                  <div className="font-bold text-slate-800 text-sm leading-tight mb-1 pr-5 relative z-10">
+                                    {turma.nome}
+                                  </div>
+
+                                  <div
+                                    className={`text-xs font-medium line-clamp-1 mb-2 relative z-10 ${turmaColor.gridTextSub}`}
+                                  >
+                                    {(Array.isArray(
+                                      turma.cursos
+                                    )
+                                      ? turma.cursos[0]
+                                          ?.titulo
+                                      : turma.cursos
+                                          ?.titulo) ||
+                                      "Curso Indefinido"}
+                                  </div>
+
+                                  <div
+                                    className={`mt-auto inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border relative z-10 ${turmaColor.badge}`}
+                                  >
+                                    {vagas === 0
+                                      ? "Lotada"
+                                      : `${vagas} ${
+                                          vagas ===
+                                          1
+                                            ? "vaga"
+                                            : "vagas"
+                                        }`}
+                                  </div>
+
+                                </div>
+
+                              );
+                            }
+                          )}
+
+                        </div>
+
+                      </td>
+
+                    );
+                  }
+                )}
+
+              </tr>
+
+            )
+          )}
+
+        </tbody>
+
+      </table>
+
     </div>
+
   )}
-
-  {activeTab === "cursos" && (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-      {cursos.map((curso) => (
-        <div
-          key={curso.id}
-          className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="font-bold text-slate-900">
-                {curso.titulo}
-              </h3>
-
-              <p className="text-sm text-slate-500 mt-2">
-                {curso.descricao ||
-                  "Sem descrição."}
-              </p>
-            </div>
-
-            <button
-              onClick={() => {
-                setEditingCurso(
-                  curso
-                );
-
-                setIsCursoModalOpen(
-                  true
-                );
-              }}
-              className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
-              title="Editar curso"
-            >
-              <Edit2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-
-  {/* MODAL CURSO */}
 
   {isCursoModalOpen && (
+
     <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
+
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+
         <div className="flex justify-between items-center p-4 border-b border-slate-200">
+
           <h3 className="font-bold text-lg text-slate-900">
             {editingCurso?.id
               ? "Editar Curso"
@@ -1005,13 +1017,16 @@ Cursos e Turmas </h1>
           >
             <X className="w-5 h-5" />
           </button>
+
         </div>
 
         <form
           onSubmit={handleSaveCurso}
           className="p-4 space-y-4"
         >
+
           <div>
+
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Título do Curso
             </label>
@@ -1034,9 +1049,11 @@ Cursos e Turmas </h1>
               }
               className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
+
           </div>
 
           <div>
+
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Descrição
             </label>
@@ -1058,10 +1075,13 @@ Cursos e Turmas </h1>
               }
               className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm"
             />
+
           </div>
 
           <div className="pt-4 flex justify-end gap-2">
+
             {editingCurso?.id && (
+
               <button
                 type="button"
                 onClick={() =>
@@ -1073,6 +1093,7 @@ Cursos e Turmas </h1>
               >
                 Excluir
               </button>
+
             )}
 
             <button
@@ -1094,18 +1115,25 @@ Cursos e Turmas </h1>
             >
               Salvar
             </button>
+
           </div>
+
         </form>
+
       </div>
+
     </div>
+
   )}
 
-  {/* MODAL TURMA */}
-
   {isTurmaModalOpen && (
+
     <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
+
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
+
         <div className="flex justify-between items-center p-4 border-b border-slate-200">
+
           <h3 className="font-bold text-lg text-slate-900">
             {editingTurma?.id
               ? "Editar Turma"
@@ -1122,13 +1150,16 @@ Cursos e Turmas </h1>
           >
             <X className="w-5 h-5" />
           </button>
+
         </div>
 
         <form
           onSubmit={handleSaveTurma}
           className="p-4 space-y-5"
         >
+
           <div>
+
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Curso Vinculado
             </label>
@@ -1150,6 +1181,7 @@ Cursos e Turmas </h1>
               }
               className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500 text-sm"
             >
+
               <option
                 value=""
                 disabled
@@ -1158,18 +1190,24 @@ Cursos e Turmas </h1>
               </option>
 
               {cursos.map((c) => (
+
                 <option
                   key={c.id}
                   value={c.id}
                 >
                   {c.titulo}
                 </option>
+
               ))}
+
             </select>
+
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+
             <div>
+
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Nome/Identificador da Turma
               </label>
@@ -1193,9 +1231,11 @@ Cursos e Turmas </h1>
                 }
                 className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500 text-sm"
               />
+
             </div>
 
             <div>
+
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Quantidade de Vagas
               </label>
@@ -1213,17 +1253,22 @@ Cursos e Turmas </h1>
               <p className="text-xs text-slate-500 mt-1">
                 Cada turma possui limite de 10 vagas.
               </p>
+
             </div>
+
           </div>
 
           <div>
+
             <label className="block text-sm font-medium text-slate-700 mb-2">
               Turno
             </label>
 
             <div className="flex gap-4">
+
               {TURNOS.map(
                 (t) => (
+
                   <label
                     key={t}
                     className={`flex-1 flex items-center justify-center gap-2 p-3 border rounded-md cursor-pointer transition-colors ${
@@ -1233,6 +1278,7 @@ Cursos e Turmas </h1>
                         : "border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
+
                     <input
                       type="radio"
                       name="turno"
@@ -1242,22 +1288,26 @@ Cursos e Turmas </h1>
                         t
                       }
                       onChange={() =>
-                        alterarTurno(
-                          t
-                        )
+                        alterarTurno(t)
                       }
                       className="hidden"
                     />
 
                     {t}
+
                   </label>
+
                 )
               )}
+
             </div>
+
           </div>
 
           {editingTurma?.turno && (
+
             <div>
+
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Horário
               </label>
@@ -1279,36 +1329,39 @@ Cursos e Turmas </h1>
                 }
                 className="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500 text-sm"
               >
+
                 {HORARIOS.filter(
                   (h) =>
                     h.turno ===
                     editingTurma.turno
-                ).map(
-                  (h) => (
-                    <option
-                      key={
-                        h.label
-                      }
-                      value={
-                        h.label
-                      }
-                    >
-                      {h.label}
-                    </option>
-                  )
-                )}
+                ).map((h) => (
+
+                  <option
+                    key={h.label}
+                    value={h.label}
+                  >
+                    {h.label}
+                  </option>
+
+                ))}
+
               </select>
+
             </div>
+
           )}
 
           <div>
+
             <label className="block text-sm font-medium text-slate-700 mb-2">
               Dias da Semana
             </label>
 
             <div className="flex flex-wrap gap-2">
+
               {DIAS_SEMANA.map(
                 (dia) => {
+
                   const isSelected =
                     (
                       editingTurma?.dias_semana ||
@@ -1318,6 +1371,7 @@ Cursos e Turmas </h1>
                     );
 
                   return (
+
                     <button
                       key={dia}
                       type="button"
@@ -1334,9 +1388,11 @@ Cursos e Turmas </h1>
                     >
                       {dia}
                     </button>
+
                   );
                 }
               )}
+
             </div>
 
             {(
@@ -1344,14 +1400,19 @@ Cursos e Turmas </h1>
               editingTurma.dias_semana
                 .length === 0
             ) && (
+
               <p className="text-xs text-red-500 mt-2">
                 Selecione ao menos um dia da semana.
               </p>
+
             )}
+
           </div>
 
           <div className="pt-4 flex justify-end gap-2 border-t border-slate-100">
+
             {editingTurma?.id && (
+
               <button
                 type="button"
                 onClick={() =>
@@ -1363,6 +1424,7 @@ Cursos e Turmas </h1>
               >
                 Excluir
               </button>
+
             )}
 
             <button
@@ -1389,15 +1451,23 @@ Cursos e Turmas </h1>
               }
               className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md disabled:opacity-50 flex items-center gap-2"
             >
+
               <Save className="w-4 h-4" />
 
               Salvar Turma
+
             </button>
+
           </div>
+
         </form>
+
       </div>
+
     </div>
+
   )}
+
 </div>
 ```
 
