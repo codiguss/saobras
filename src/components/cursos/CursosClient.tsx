@@ -11,6 +11,7 @@ import {
   Clock,
   Users,
   BookOpen,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -23,17 +24,20 @@ type Turma = {
   id: string;
   nome: string;
   curso_id: string;
-  turno: string;
+  turno: string | null;
   dias_semana: string[] | null;
   horario: string | null;
   data_hora_inicio: string | null;
   data_hora_fim: string | null;
   vagas: number | null;
-  cursos?: {
-    titulo: string;
-  } | {
-    titulo: string;
-  }[] | null;
+  cursos?:
+    | {
+        titulo: string;
+      }
+    | {
+        titulo: string;
+      }[]
+    | null;
 };
 
 type EditingTurma = {
@@ -90,7 +94,9 @@ const DIAS_ABREV: Record<string, string> = {
 };
 
 function getCursoTitulo(turma: Turma) {
-  if (!turma.cursos) return "";
+  if (!turma.cursos) {
+    return "";
+  }
 
   if (Array.isArray(turma.cursos)) {
     return turma.cursos[0]?.titulo || "";
@@ -100,15 +106,17 @@ function getCursoTitulo(turma: Turma) {
 }
 
 function getHorarioByLabel(label: string) {
-  return HORARIOS.find((horario) => horario.label === label);
+  return HORARIOS.find(
+    (horario) => horario.label === label
+  );
 }
 
 function getHorarioLabel(turma: Turma) {
   /*
-   * Primeiro usa diretamente o campo horario salvo no banco.
+   * Primeiro utiliza o campo horario salvo no banco.
    *
    * Exemplo:
-   * "08:30 - 10:00"
+   * 08:30 - 10:00
    */
   if (turma.horario) {
     const horarioBanco = HORARIOS.find(
@@ -123,53 +131,77 @@ function getHorarioLabel(turma: Turma) {
   }
 
   /*
-   * Compatibilidade com turmas antigas que ainda não possuem
-   * horario preenchido.
+   * Compatibilidade com turmas antigas que ainda
+   * não possuem o campo horario preenchido.
    */
   if (turma.data_hora_inicio) {
-    const data = new Date(turma.data_hora_inicio);
+    const data = new Date(
+      turma.data_hora_inicio
+    );
 
-    const brasil = new Intl.DateTimeFormat("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(data);
+    const horaBrasil =
+      new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(data);
 
     if (turma.turno === "Manhã") {
-      if (brasil === "08:30") return "08:30 - 10:00";
-      if (brasil === "10:00") return "10:00 - 11:30";
+      if (horaBrasil === "08:30") {
+        return "08:30 - 10:00";
+      }
+
+      if (horaBrasil === "10:00") {
+        return "10:00 - 11:30";
+      }
     }
 
     if (turma.turno === "Tarde") {
-      if (brasil === "14:30") return "14:30 - 16:00";
-      if (brasil === "16:00") return "16:00 - 17:30";
+      if (horaBrasil === "14:30") {
+        return "14:30 - 16:00";
+      }
+
+      if (horaBrasil === "16:00") {
+        return "16:00 - 17:30";
+      }
     }
   }
 
   return "";
 }
 
-function criarDatasHorario(horarioLabel: string) {
-  const horario = getHorarioByLabel(horarioLabel);
+function criarDatasHorario(
+  horarioLabel: string
+) {
+  const horario =
+    getHorarioByLabel(horarioLabel);
 
   if (!horario) {
-    throw new Error("Horário inválido.");
+    throw new Error(
+      "Horário selecionado é inválido."
+    );
   }
 
-  /*
-   * A data atual é usada somente para montar os timestamps.
-   * O horário salvo no campo `horario` continua sendo o texto
-   * selecionado pelo usuário.
-   */
   const hoje = new Date();
 
   const ano = hoje.getFullYear();
-  const mes = String(hoje.getMonth() + 1).padStart(2, "0");
-  const dia = String(hoje.getDate()).padStart(2, "0");
 
-  const inicio = `${ano}-${mes}-${dia}T${horario.inicio}:00-03:00`;
-  const fim = `${ano}-${mes}-${dia}T${horario.fim}:00-03:00`;
+  const mes = String(
+    hoje.getMonth() + 1
+  ).padStart(2, "0");
+
+  const dia = String(
+    hoje.getDate()
+  ).padStart(2, "0");
+
+  const inicio =
+    `${ano}-${mes}-${dia}` +
+    `T${horario.inicio}:00-03:00`;
+
+  const fim =
+    `${ano}-${mes}-${dia}` +
+    `T${horario.fim}:00-03:00`;
 
   return {
     inicio,
@@ -177,34 +209,36 @@ function criarDatasHorario(horarioLabel: string) {
   };
 }
 
-export default function CursosClient({
+export function CursosClient({
   cursos,
   turmas: turmasIniciais,
 }: {
   cursos: Curso[];
   turmas: Turma[];
 }) {
-  const [turmas, setTurmas] = useState<Turma[]>(turmasIniciais || []);
+  const [turmas, setTurmas] =
+    useState<Turma[]>(
+      turmasIniciais || []
+    );
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] =
+    useState(false);
 
   const [editingTurma, setEditingTurma] =
     useState<EditingTurma | null>(null);
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving, setIsSaving] =
+    useState(false);
 
   const [selectedCurso, setSelectedCurso] =
-    useState<string>("todos");
+    useState("todos");
 
   const [selectedTurno, setSelectedTurno] =
-    useState<string>("todos");
+    useState("todos");
 
-  const [mensagem, setMensagem] = useState("");
+  const [mensagem, setMensagem] =
+    useState("");
 
-  /*
-   * Mantém a lista atualizada caso o componente receba
-   * novos dados pelo servidor.
-   */
   useEffect(() => {
     setTurmas(turmasIniciais || []);
   }, [turmasIniciais]);
@@ -221,27 +255,36 @@ export default function CursosClient({
 
       return cursoOk && turnoOk;
     });
-  }, [turmas, selectedCurso, selectedTurno]);
+  }, [
+    turmas,
+    selectedCurso,
+    selectedTurno,
+  ]);
 
-  const turmasPorDiaEHorario = (
+  const getTurmasForCell = (
     dia: string,
     horario: string
   ) => {
-    return turmasFiltradas.filter((turma) => {
-      const dias = turma.dias_semana || [];
+    return turmasFiltradas.filter(
+      (turma) => {
+        const dias =
+          turma.dias_semana || [];
 
-      const possuiDia = dias.some(
-        (item) =>
-          item.toLowerCase() === dia.toLowerCase()
-      );
+        const possuiDia = dias.some(
+          (item) =>
+            item.toLowerCase() ===
+            dia.toLowerCase()
+        );
 
-      const horarioTurma = getHorarioLabel(turma);
+        const horarioTurma =
+          getHorarioLabel(turma);
 
-      return (
-        possuiDia &&
-        horarioTurma === horario
-      );
-    });
+        return (
+          possuiDia &&
+          horarioTurma === horario
+        );
+      }
+    );
   };
 
   const abrirNovaTurma = () => {
@@ -259,54 +302,77 @@ export default function CursosClient({
     setIsModalOpen(true);
   };
 
-  const abrirEdicao = (turma: Turma) => {
+  const abrirEdicao = (
+    turma: Turma
+  ) => {
     setMensagem("");
 
-    const horario = getHorarioLabel(turma);
+    const horario =
+      getHorarioLabel(turma);
 
     setEditingTurma({
       id: turma.id,
       nome: turma.nome || "",
-      curso_id: turma.curso_id || "",
-      turno: turma.turno || "Manhã",
-      dias_semana: turma.dias_semana || [],
+      curso_id:
+        turma.curso_id || "",
+      turno:
+        turma.turno || "Manhã",
+      dias_semana:
+        turma.dias_semana || [],
       horario:
         horario ||
         (turma.turno === "Tarde"
           ? "14:30 - 16:00"
           : "08:30 - 10:00"),
-      vagas: turma.vagas || 30,
+      vagas:
+        turma.vagas || 30,
     });
 
     setIsModalOpen(true);
   };
 
   const fecharModal = () => {
-    if (isSaving) return;
+    if (isSaving) {
+      return;
+    }
 
     setIsModalOpen(false);
     setEditingTurma(null);
     setMensagem("");
   };
 
-  const alternarDia = (dia: string) => {
-    if (!editingTurma) return;
+  const alternarDia = (
+    dia: string
+  ) => {
+    if (!editingTurma) {
+      return;
+    }
 
     const existe =
-      editingTurma.dias_semana.includes(dia);
+      editingTurma.dias_semana.includes(
+        dia
+      );
 
     setEditingTurma({
       ...editingTurma,
+
       dias_semana: existe
         ? editingTurma.dias_semana.filter(
             (item) => item !== dia
           )
-        : [...editingTurma.dias_semana, dia],
+        : [
+            ...editingTurma.dias_semana,
+            dia,
+          ],
     });
   };
 
-  const alterarTurno = (turno: string) => {
-    if (!editingTurma) return;
+  const alterarTurno = (
+    turno: string
+  ) => {
+    if (!editingTurma) {
+      return;
+    }
 
     const primeiroHorario =
       turno === "Manhã"
@@ -321,35 +387,54 @@ export default function CursosClient({
   };
 
   const salvarTurma = async () => {
-    if (!editingTurma) return;
+    if (!editingTurma) {
+      return;
+    }
 
     setMensagem("");
 
-    if (!editingTurma.nome.trim()) {
-      setMensagem("Informe o nome da turma.");
+    if (
+      !editingTurma.nome.trim()
+    ) {
+      setMensagem(
+        "Informe o nome da turma."
+      );
       return;
     }
 
     if (!editingTurma.curso_id) {
-      setMensagem("Selecione um curso.");
+      setMensagem(
+        "Selecione um curso."
+      );
       return;
     }
 
-    if (editingTurma.dias_semana.length === 0) {
-      setMensagem("Selecione pelo menos um dia da semana.");
+    if (
+      editingTurma.dias_semana
+        .length === 0
+    ) {
+      setMensagem(
+        "Selecione pelo menos um dia da semana."
+      );
       return;
     }
 
     if (!editingTurma.horario) {
-      setMensagem("Selecione um horário.");
+      setMensagem(
+        "Selecione um horário."
+      );
       return;
     }
 
     const horarioSelecionado =
-      getHorarioByLabel(editingTurma.horario);
+      getHorarioByLabel(
+        editingTurma.horario
+      );
 
     if (!horarioSelecionado) {
-      setMensagem("O horário selecionado é inválido.");
+      setMensagem(
+        "O horário selecionado é inválido."
+      );
       return;
     }
 
@@ -358,7 +443,7 @@ export default function CursosClient({
       editingTurma.turno
     ) {
       setMensagem(
-        "O horário selecionado não corresponde ao turno da turma."
+        "O horário selecionado não corresponde ao turno."
       );
       return;
     }
@@ -366,53 +451,67 @@ export default function CursosClient({
     setIsSaving(true);
 
     try {
-      const { inicio, fim } =
-        criarDatasHorario(
-          editingTurma.horario
-        );
+      const {
+        inicio,
+        fim,
+      } = criarDatasHorario(
+        editingTurma.horario
+      );
 
       /*
        * IMPORTANTE:
        *
-       * Aqui está a correção principal.
+       * horario recebe o TEXTO selecionado.
        *
-       * O campo horario recebe diretamente:
-       *
+       * Exemplo:
        * "08:30 - 10:00"
        *
-       * "10:00 - 11:30"
-       *
-       * "14:30 - 16:00"
-       *
-       * "16:00 - 17:30"
-       *
-       * e NÃO recebe mais:
-       *
+       * Não usamos mais:
        * "manha-1"
-       * "manha-2"
-       * etc.
        */
+
       const payload = {
-        nome: editingTurma.nome.trim(),
-        curso_id: editingTurma.curso_id,
-        turno: editingTurma.turno,
-        dias_semana: editingTurma.dias_semana,
-        horario: editingTurma.horario,
-        data_hora_inicio: inicio,
-        data_hora_fim: fim,
-        vagas: editingTurma.vagas || 30,
+        nome:
+          editingTurma.nome.trim(),
+
+        curso_id:
+          editingTurma.curso_id,
+
+        turno:
+          editingTurma.turno,
+
+        dias_semana:
+          editingTurma.dias_semana,
+
+        horario:
+          editingTurma.horario,
+
+        data_hora_inicio:
+          inicio,
+
+        data_hora_fim:
+          fim,
+
+        vagas:
+          editingTurma.vagas || 30,
       };
 
       console.log(
-        "SALVANDO TURMA:",
+        "PAYLOAD DA TURMA:",
         payload
       );
 
       if (editingTurma.id) {
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from("turmas")
           .update(payload)
-          .eq("id", editingTurma.id)
+          .eq(
+            "id",
+            editingTurma.id
+          )
           .select(`
             *,
             cursos (
@@ -435,19 +534,25 @@ export default function CursosClient({
           return;
         }
 
-        setTurmas((lista) =>
-          lista.map((turma) =>
-            turma.id === editingTurma.id
-              ? (data as Turma)
-              : turma
-          )
+        setTurmas(
+          (lista) =>
+            lista.map(
+              (turma) =>
+                turma.id ===
+                editingTurma.id
+                  ? (data as Turma)
+                  : turma
+            )
         );
 
         setMensagem(
           "Turma atualizada com sucesso!"
         );
       } else {
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from("turmas")
           .insert([payload])
           .select(`
@@ -472,20 +577,18 @@ export default function CursosClient({
           return;
         }
 
-        setTurmas((lista) => [
-          ...lista,
-          data as Turma,
-        ]);
+        setTurmas(
+          (lista) => [
+            ...lista,
+            data as Turma,
+          ]
+        );
 
         setMensagem(
           "Turma criada com sucesso!"
         );
       }
 
-      /*
-       * Pequeno atraso para o usuário conseguir
-       * visualizar a mensagem antes de fechar.
-       */
       setTimeout(() => {
         setIsModalOpen(false);
         setEditingTurma(null);
@@ -497,24 +600,34 @@ export default function CursosClient({
       setMensagem(
         error instanceof Error
           ? error.message
-          : "Ocorreu um erro ao salvar a turma."
+          : "Erro ao salvar a turma."
       );
     } finally {
       setIsSaving(false);
     }
   };
 
-  const excluirTurma = async (turma: Turma) => {
-    const confirmar = window.confirm(
-      `Deseja realmente excluir a turma "${turma.nome}"?`
-    );
+  const excluirTurma = async (
+    turma: Turma
+  ) => {
+    const confirmar =
+      window.confirm(
+        `Deseja realmente excluir a turma "${turma.nome}"?`
+      );
 
-    if (!confirmar) return;
+    if (!confirmar) {
+      return;
+    }
 
-    const { error } = await supabase
+    const {
+      error,
+    } = await supabase
       .from("turmas")
       .delete()
-      .eq("id", turma.id);
+      .eq(
+        "id",
+        turma.id
+      );
 
     if (error) {
       console.error(error);
@@ -527,10 +640,12 @@ export default function CursosClient({
       return;
     }
 
-    setTurmas((lista) =>
-      lista.filter(
-        (item) => item.id !== turma.id
-      )
+    setTurmas(
+      (lista) =>
+        lista.filter(
+          (item) =>
+            item.id !== turma.id
+        )
     );
   };
 
@@ -545,13 +660,14 @@ export default function CursosClient({
           </h1>
 
           <p className="text-sm text-slate-500 mt-1">
-            Organize as turmas, horários e dias
-            das aulas.
+            Organize as turmas, horários e dias das aulas.
           </p>
         </div>
 
         <button
-          onClick={abrirNovaTurma}
+          onClick={
+            abrirNovaTurma
+          }
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -570,9 +686,13 @@ export default function CursosClient({
             </label>
 
             <select
-              value={selectedCurso}
+              value={
+                selectedCurso
+              }
               onChange={(e) =>
-                setSelectedCurso(e.target.value)
+                setSelectedCurso(
+                  e.target.value
+                )
               }
               className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
@@ -580,14 +700,22 @@ export default function CursosClient({
                 Todos os cursos
               </option>
 
-              {cursos.map((curso) => (
-                <option
-                  key={curso.id}
-                  value={curso.id}
-                >
-                  {curso.titulo}
-                </option>
-              ))}
+              {cursos.map(
+                (curso) => (
+                  <option
+                    key={
+                      curso.id
+                    }
+                    value={
+                      curso.id
+                    }
+                  >
+                    {
+                      curso.titulo
+                    }
+                  </option>
+                )
+              )}
             </select>
           </div>
 
@@ -597,9 +725,13 @@ export default function CursosClient({
             </label>
 
             <select
-              value={selectedTurno}
+              value={
+                selectedTurno
+              }
               onChange={(e) =>
-                setSelectedTurno(e.target.value)
+                setSelectedTurno(
+                  e.target.value
+                )
               }
               className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
@@ -619,7 +751,7 @@ export default function CursosClient({
         </div>
       </div>
 
-      {/* GRADE SEMANAL */}
+      {/* GRADE */}
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex items-center gap-2">
@@ -632,8 +764,6 @@ export default function CursosClient({
 
         <div className="overflow-x-auto">
           <div className="min-w-[1000px]">
-            {/* CABEÇALHO DOS DIAS */}
-
             <div className="grid grid-cols-[140px_repeat(5,1fr)] border-b border-slate-200">
               <div className="p-3 bg-slate-50 border-r border-slate-200">
                 <span className="text-xs font-semibold text-slate-500">
@@ -641,131 +771,150 @@ export default function CursosClient({
                 </span>
               </div>
 
-              {DIAS.map((dia) => (
-                <div
-                  key={dia}
-                  className="p-3 bg-slate-50 text-center border-r border-slate-200 last:border-r-0"
-                >
-                  <span className="text-xs font-semibold text-slate-600">
-                    {DIAS_ABREV[dia]}
-                  </span>
-                </div>
-              ))}
+              {DIAS.map(
+                (dia) => (
+                  <div
+                    key={
+                      dia
+                    }
+                    className="p-3 bg-slate-50 text-center border-r border-slate-200 last:border-r-0"
+                  >
+                    <span className="text-xs font-semibold text-slate-600">
+                      {
+                        DIAS_ABREV[
+                          dia
+                        ]
+                      }
+                    </span>
+                  </div>
+                )
+              )}
             </div>
 
-            {/* HORÁRIOS */}
+            {HORARIOS.map(
+              (horario) => (
+                <div
+                  key={
+                    horario.label
+                  }
+                  className="grid grid-cols-[140px_repeat(5,1fr)] border-b border-slate-200 last:border-b-0"
+                >
+                  <div className="p-3 border-r border-slate-200 bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-slate-500" />
 
-            {HORARIOS.map((horario) => (
-              <div
-                key={horario.label}
-                className="grid grid-cols-[140px_repeat(5,1fr)] border-b border-slate-200 last:border-b-0"
-              >
-                {/* HORÁRIO */}
+                      <div>
+                        <p className="text-sm font-semibold text-slate-700">
+                          {
+                            horario.label
+                          }
+                        </p>
 
-                <div className="p-3 border-r border-slate-200 bg-slate-50">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-slate-500" />
-
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700">
-                        {horario.label}
-                      </p>
-
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {horario.turno}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* DIAS */}
-
-                {DIAS.map((dia) => {
-                  const turmasCelula =
-                    turmasPorDiaEHorario(
-                      dia,
-                      horario.label
-                    );
-
-                  return (
-                    <div
-                      key={`${dia}-${horario.label}`}
-                      className="min-h-[120px] p-2 border-r border-slate-200 last:border-r-0"
-                    >
-                      <div className="space-y-2">
-                        {turmasCelula.map(
-                          (turma) => (
-                            <div
-                              key={turma.id}
-                              className="p-3 bg-blue-50 border border-blue-200 rounded-lg"
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-sm text-blue-900 truncate">
-                                    {turma.nome}
-                                  </p>
-
-                                  <p className="text-xs text-blue-700 mt-1 truncate">
-                                    {getCursoTitulo(
-                                      turma
-                                    )}
-                                  </p>
-
-                                  <div className="flex items-center gap-1 mt-2 text-xs text-blue-600">
-                                    <Users className="w-3 h-3" />
-
-                                    <span>
-                                      {turma.vagas ||
-                                        0}{" "}
-                                      vagas
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() =>
-                                      abrirEdicao(
-                                        turma
-                                      )
-                                    }
-                                    className="p-1.5 text-blue-600 hover:bg-blue-100 rounded"
-                                    title="Editar"
-                                  >
-                                    <Edit2 className="w-3.5 h-3.5" />
-                                  </button>
-
-                                  <button
-                                    onClick={() =>
-                                      excluirTurma(
-                                        turma
-                                      )
-                                    }
-                                    className="p-1.5 text-red-600 hover:bg-red-100 rounded"
-                                    title="Excluir"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        )}
-
-                        {turmasCelula.length ===
-                          0 && (
-                          <div className="h-full min-h-[100px] flex items-center justify-center">
-                            <span className="text-xs text-slate-300">
-                              —
-                            </span>
-                          </div>
-                        )}
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {
+                            horario.turno
+                          }
+                        </p>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ))}
+                  </div>
+
+                  {DIAS.map(
+                    (dia) => {
+                      const turmasCelula =
+                        getTurmasForCell(
+                          dia,
+                          horario.label
+                        );
+
+                      return (
+                        <div
+                          key={`${dia}-${horario.label}`}
+                          className="min-h-[120px] p-2 border-r border-slate-200 last:border-r-0"
+                        >
+                          <div className="space-y-2">
+                            {turmasCelula.map(
+                              (
+                                turma
+                              ) => (
+                                <div
+                                  key={
+                                    turma.id
+                                  }
+                                  className="p-3 bg-blue-50 border border-blue-200 rounded-lg"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="font-semibold text-sm text-blue-900 truncate">
+                                        {
+                                          turma.nome
+                                        }
+                                      </p>
+
+                                      <p className="text-xs text-blue-700 mt-1 truncate">
+                                        {getCursoTitulo(
+                                          turma
+                                        )}
+                                      </p>
+
+                                      <div className="flex items-center gap-1 mt-2 text-xs text-blue-600">
+                                        <Users className="w-3 h-3" />
+
+                                        <span>
+                                          {
+                                            turma.vagas
+                                          }{" "}
+                                          vagas
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() =>
+                                          abrirEdicao(
+                                            turma
+                                          )
+                                        }
+                                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded"
+                                        title="Editar"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+
+                                      <button
+                                        onClick={() =>
+                                          excluirTurma(
+                                            turma
+                                          )
+                                        }
+                                        className="p-1.5 text-red-600 hover:bg-red-100 rounded"
+                                        title="Excluir"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            )}
+
+                            {turmasCelula.length ===
+                              0 && (
+                              <div className="h-full min-h-[100px] flex items-center justify-center">
+                                <span className="text-xs text-slate-300">
+                                  —
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+              )
+            )}
           </div>
         </div>
       </div>
@@ -787,28 +936,31 @@ export default function CursosClient({
                   </h2>
 
                   <p className="text-sm text-slate-500 mt-1">
-                    Configure a turma e o horário
-                    das aulas.
+                    Configure a turma e o horário das aulas.
                   </p>
                 </div>
 
                 <button
-                  onClick={fecharModal}
-                  disabled={isSaving}
+                  onClick={
+                    fecharModal
+                  }
+                  disabled={
+                    isSaving
+                  }
                   className="p-2 hover:bg-slate-100 rounded-lg"
                 >
                   <X className="w-5 h-5 text-slate-500" />
                 </button>
               </div>
 
-              {/* CONTEÚDO */}
+              {/* FORMULÁRIO */}
 
               <div className="p-5 space-y-5">
-                {/* MENSAGEM */}
-
                 {mensagem && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                    {mensagem}
+                    {
+                      mensagem
+                    }
                   </div>
                 )}
 
@@ -821,12 +973,16 @@ export default function CursosClient({
 
                   <input
                     type="text"
-                    value={editingTurma.nome}
+                    value={
+                      editingTurma.nome
+                    }
                     onChange={(e) =>
-                      setEditingTurma({
-                        ...editingTurma,
-                        nome: e.target.value,
-                      })
+                      setEditingTurma(
+                        {
+                          ...editingTurma,
+                          nome: e.target.value,
+                        }
+                      )
                     }
                     placeholder="Ex.: Turma A"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -848,11 +1004,14 @@ export default function CursosClient({
                         editingTurma.curso_id
                       }
                       onChange={(e) =>
-                        setEditingTurma({
-                          ...editingTurma,
-                          curso_id:
-                            e.target.value,
-                        })
+                        setEditingTurma(
+                          {
+                            ...editingTurma,
+                            curso_id:
+                              e.target
+                                .value,
+                          }
+                        )
                       }
                       className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
@@ -860,14 +1019,22 @@ export default function CursosClient({
                         Selecione um curso
                       </option>
 
-                      {cursos.map((curso) => (
-                        <option
-                          key={curso.id}
-                          value={curso.id}
-                        >
-                          {curso.titulo}
-                        </option>
-                      ))}
+                      {cursos.map(
+                        (curso) => (
+                          <option
+                            key={
+                              curso.id
+                            }
+                            value={
+                              curso.id
+                            }
+                          >
+                            {
+                              curso.titulo
+                            }
+                          </option>
+                        )
+                      )}
                     </select>
                   </div>
                 </div>
@@ -880,10 +1047,15 @@ export default function CursosClient({
                   </label>
 
                   <div className="grid grid-cols-2 gap-3">
-                    {["Manhã", "Tarde"].map(
+                    {[
+                      "Manhã",
+                      "Tarde",
+                    ].map(
                       (turno) => (
                         <button
-                          key={turno}
+                          key={
+                            turno
+                          }
                           type="button"
                           onClick={() =>
                             alterarTurno(
@@ -897,7 +1069,9 @@ export default function CursosClient({
                               : "bg-white text-slate-700 border-slate-300 hover:border-blue-400"
                           }`}
                         >
-                          {turno}
+                          {
+                            turno
+                          }
                         </button>
                       )
                     )}
@@ -916,51 +1090,61 @@ export default function CursosClient({
                       (horario) =>
                         horario.turno ===
                         editingTurma.turno
-                    ).map((horario) => (
-                      <button
-                        key={horario.label}
-                        type="button"
-                        onClick={() =>
-                          setEditingTurma({
-                            ...editingTurma,
-                            horario:
-                              horario.label,
-                          })
-                        }
-                        className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition-colors ${
-                          editingTurma.horario ===
-                          horario.label
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-white text-slate-700 border-slate-300 hover:border-blue-400"
-                        }`}
-                      >
-                        <Clock
-                          className={`w-5 h-5 ${
+                    ).map(
+                      (horario) => (
+                        <button
+                          key={
+                            horario.label
+                          }
+                          type="button"
+                          onClick={() =>
+                            setEditingTurma(
+                              {
+                                ...editingTurma,
+                                horario:
+                                  horario.label,
+                              }
+                            )
+                          }
+                          className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition-colors ${
                             editingTurma.horario ===
                             horario.label
-                              ? "text-white"
-                              : "text-slate-400"
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-white text-slate-700 border-slate-300 hover:border-blue-400"
                           }`}
-                        />
-
-                        <div>
-                          <p className="font-semibold text-sm">
-                            {horario.label}
-                          </p>
-
-                          <p
-                            className={`text-xs mt-0.5 ${
+                        >
+                          <Clock
+                            className={`w-5 h-5 ${
                               editingTurma.horario ===
                               horario.label
-                                ? "text-blue-100"
+                                ? "text-white"
                                 : "text-slate-400"
                             }`}
-                          >
-                            {horario.turno}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
+                          />
+
+                          <div>
+                            <p className="font-semibold text-sm">
+                              {
+                                horario.label
+                              }
+                            </p>
+
+                            <p
+                              className={`text-xs mt-0.5 ${
+                                editingTurma.horario ===
+                                horario.label
+                                  ? "text-blue-100"
+                                  : "text-slate-400"
+                              }`}
+                            >
+                              {
+                                horario.turno
+                              }
+                            </p>
+                          </div>
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
 
@@ -972,29 +1156,37 @@ export default function CursosClient({
                   </label>
 
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {DIAS.map((dia) => {
-                      const selecionado =
-                        editingTurma.dias_semana.includes(
-                          dia
-                        );
+                    {DIAS.map(
+                      (dia) => {
+                        const selecionado =
+                          editingTurma.dias_semana.includes(
+                            dia
+                          );
 
-                      return (
-                        <button
-                          key={dia}
-                          type="button"
-                          onClick={() =>
-                            alternarDia(dia)
-                          }
-                          className={`px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
-                            selecionado
-                              ? "bg-blue-600 text-white border-blue-600"
-                              : "bg-white text-slate-700 border-slate-300 hover:border-blue-400"
-                          }`}
-                        >
-                          {dia}
-                        </button>
-                      );
-                    })}
+                        return (
+                          <button
+                            key={
+                              dia
+                            }
+                            type="button"
+                            onClick={() =>
+                              alternarDia(
+                                dia
+                              )
+                            }
+                            className={`px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                              selecionado
+                                ? "bg-blue-600 text-white border-blue-600"
+                                : "bg-white text-slate-700 border-slate-300 hover:border-blue-400"
+                            }`}
+                          >
+                            {
+                              dia
+                            }
+                          </button>
+                        );
+                      }
+                    )}
                   </div>
                 </div>
 
@@ -1008,15 +1200,20 @@ export default function CursosClient({
                   <input
                     type="number"
                     min={1}
-                    value={editingTurma.vagas}
+                    value={
+                      editingTurma.vagas
+                    }
                     onChange={(e) =>
-                      setEditingTurma({
-                        ...editingTurma,
-                        vagas:
-                          Number(
-                            e.target.value
-                          ) || 0,
-                      })
+                      setEditingTurma(
+                        {
+                          ...editingTurma,
+                          vagas:
+                            Number(
+                              e.target
+                                .value
+                            ) || 0,
+                        }
+                      )
                     }
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -1031,19 +1228,31 @@ export default function CursosClient({
 
                   <div className="space-y-1 text-sm text-slate-700">
                     <p>
-                      <strong>Turno:</strong>{" "}
-                      {editingTurma.turno}
+                      <strong>
+                        Turno:
+                      </strong>{" "}
+                      {
+                        editingTurma.turno
+                      }
                     </p>
 
                     <p>
-                      <strong>Horário:</strong>{" "}
-                      {editingTurma.horario}
+                      <strong>
+                        Horário:
+                      </strong>{" "}
+                      {
+                        editingTurma.horario
+                      }
                     </p>
 
                     <p>
-                      <strong>Dias:</strong>{" "}
-                      {editingTurma.dias_semana
-                        .length > 0
+                      <strong>
+                        Dias:
+                      </strong>{" "}
+                      {editingTurma
+                        .dias_semana
+                        .length >
+                      0
                         ? editingTurma.dias_semana.join(
                             ", "
                           )
@@ -1053,13 +1262,17 @@ export default function CursosClient({
                 </div>
               </div>
 
-              {/* FOOTER */}
+              {/* RODAPÉ */}
 
               <div className="flex items-center justify-end gap-3 p-5 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={fecharModal}
-                  disabled={isSaving}
+                  onClick={
+                    fecharModal
+                  }
+                  disabled={
+                    isSaving
+                  }
                   className="px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
                 >
                   Cancelar
@@ -1067,15 +1280,17 @@ export default function CursosClient({
 
                 <button
                   type="button"
-                  onClick={salvarTurma}
-                  disabled={isSaving}
+                  onClick={
+                    salvarTurma
+                  }
+                  disabled={
+                    isSaving
+                  }
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   {isSaving ? (
                     <>
-                      <span className="animate-spin">
-                        <Loader2Icon />
-                      </span>
+                      <Loader2 className="w-4 h-4 animate-spin" />
 
                       Salvando...
                     </>
@@ -1092,65 +1307,5 @@ export default function CursosClient({
           </div>
         )}
     </div>
-  );
-}
-
-function Loader2Icon() {
-  return (
-    <svg
-      className="w-4 h-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M12 2V6"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M12 18V22"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M4.93 4.93L7.76 7.76"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M16.24 16.24L19.07 19.07"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M2 12H6"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M18 12H22"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M4.93 19.07L7.76 16.24"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M16.24 7.76L19.07 4.93"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }
