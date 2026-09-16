@@ -63,7 +63,6 @@ export default function FormCheckin() {
   });
 
   const [turmaSelecionadaId, setTurmaSelecionadaId] = useState("");
-
   const [searchTerm, setSearchTerm] = useState("");
   const [buscaTurma, setBuscaTurma] = useState("");
 
@@ -435,8 +434,6 @@ export default function FormCheckin() {
 
       Object.entries(frequencia).forEach(
         ([alunoId, state]) => {
-          // MARCAR COMO PRESENTE
-
           if (
             state.presente &&
             !state.presencaIdNoBanco
@@ -454,8 +451,6 @@ export default function FormCheckin() {
             });
           }
 
-          // REMOVER PRESENÇA
-
           if (
             !state.presente &&
             state.presencaIdNoBanco
@@ -467,8 +462,6 @@ export default function FormCheckin() {
         }
       );
 
-      // NENHUMA ALTERAÇÃO
-
       if (
         insercoes.length === 0 &&
         exclusoes.length === 0
@@ -479,8 +472,6 @@ export default function FormCheckin() {
 
         return;
       }
-
-      // EXCLUIR PRESENÇAS
 
       if (exclusoes.length > 0) {
         const {
@@ -494,8 +485,6 @@ export default function FormCheckin() {
           throw deleteError;
         }
       }
-
-      // INSERIR PRESENÇAS
 
       if (insercoes.length > 0) {
         const {
@@ -578,7 +567,7 @@ export default function FormCheckin() {
   }, [turmas]);
 
   // ==========================================================
-  // TURMAS DISPONÍVEIS DE ACORDO COM O CURSO E TURNO
+  // TURMAS PARA O FILTRO
   // ==========================================================
 
   const turmasParaSelect = useMemo(() => {
@@ -611,7 +600,6 @@ export default function FormCheckin() {
       buscaTurma.trim().toLowerCase();
 
     return turmas.filter((turma) => {
-      // FILTRO POR CURSO
       if (
         filtroCurso &&
         turma.curso_id !== filtroCurso
@@ -619,7 +607,6 @@ export default function FormCheckin() {
         return false;
       }
 
-      // FILTRO POR TURNO
       if (
         filtroTurno &&
         turma.turno !== filtroTurno
@@ -627,7 +614,6 @@ export default function FormCheckin() {
         return false;
       }
 
-      // FILTRO POR TURMA
       if (
         filtroTurma &&
         turma.id !== filtroTurma
@@ -635,7 +621,6 @@ export default function FormCheckin() {
         return false;
       }
 
-      // BUSCA POR TEXTO
       if (termo) {
         const curso = cursos.find(
           (c) =>
@@ -680,7 +665,7 @@ export default function FormCheckin() {
   };
 
   // ==========================================================
-  // QUANTIDADE DE PRESENTES E FALTAS
+  // QUANTIDADE
   // ==========================================================
 
   const qtdPresentes =
@@ -717,9 +702,7 @@ export default function FormCheckin() {
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-10">
 
-      {/* ======================================================
-          CABEÇALHO
-      ====================================================== */}
+      {/* CABEÇALHO */}
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
 
@@ -743,8 +726,6 @@ export default function FormCheckin() {
             </div>
 
           </div>
-
-          {/* DATA */}
 
           <div className="flex flex-col gap-1 min-w-[230px]">
 
@@ -775,9 +756,7 @@ export default function FormCheckin() {
 
       </div>
 
-      {/* ======================================================
-          ERRO
-      ====================================================== */}
+      {/* ERRO */}
 
       {erro && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700">
@@ -800,9 +779,7 @@ export default function FormCheckin() {
         </div>
       )}
 
-      {/* ======================================================
-          SUCESSO
-      ====================================================== */}
+      {/* SUCESSO */}
 
       {sucesso && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700">
@@ -832,7 +809,7 @@ export default function FormCheckin() {
       {!turmaSelecionadaId && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
-          {/* CABEÇALHO */}
+          {/* TÍTULO */}
 
           <div className="p-6 border-b border-slate-200">
 
@@ -843,6 +820,7 @@ export default function FormCheckin() {
               </div>
 
               <div>
+
                 <h2 className="text-lg font-bold text-slate-900">
                   Organizar chamada
                 </h2>
@@ -851,6 +829,7 @@ export default function FormCheckin() {
                   Filtre por curso, turno ou turma
                   para encontrar rapidamente a chamada.
                 </p>
+
               </div>
 
             </div>
@@ -978,7 +957,7 @@ export default function FormCheckin() {
 
               </div>
 
-              {/* BUSCA */}
+              {/* PESQUISA */}
 
               <div>
 
@@ -1008,7 +987,7 @@ export default function FormCheckin() {
 
             </div>
 
-            {/* FILTROS ATIVOS */}
+            {/* INFORMAÇÕES DOS FILTROS */}
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5">
 
@@ -1150,7 +1129,7 @@ export default function FormCheckin() {
                         className="group text-left bg-white border border-slate-200 rounded-2xl p-5 hover:border-blue-400 hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
                       >
 
-                        {/* TOPO DO CARD */}
+                        {/* TOPO */}
 
                         <div className="flex items-start justify-between gap-3">
 
@@ -1216,8 +1195,7 @@ export default function FormCheckin() {
                             </div>
                           )}
 
-                          {dias.length >
-                            0 && (
+                          {dias.length > 0 && (
                             <div className="flex items-start gap-3">
 
                               <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
@@ -1373,16 +1351,12 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* ==================================================
-              RESUMO
-          ================================================== */}
+          {/* RESUMO */}
 
           <div className="p-6 border-b border-slate-200">
 
             {alunos.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-
-                {/* TOTAL */}
 
                 <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
 
@@ -1410,8 +1384,6 @@ export default function FormCheckin() {
 
                 </div>
 
-                {/* PRESENTES */}
-
                 <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
 
                   <div className="flex items-center gap-3">
@@ -1437,8 +1409,6 @@ export default function FormCheckin() {
                   </div>
 
                 </div>
-
-                {/* FALTAS */}
 
                 <div className="rounded-xl bg-red-50 border border-red-100 p-4">
 
@@ -1471,9 +1441,7 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* ==================================================
-              ALUNOS
-          ================================================== */}
+          {/* ALUNOS */}
 
           <div className="p-6">
 
@@ -1694,9 +1662,7 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* ==================================================
-              BOTÃO SALVAR
-          ================================================== */}
+          {/* SALVAR */}
 
           {alunos.length > 0 &&
             !isLoadingAlunos && (
@@ -1745,4 +1711,4 @@ export default function FormCheckin() {
     </div>
   );
 }
-```
+
