@@ -36,11 +36,13 @@ export type Aluno = {
   tags_perfil?: string[] | null;
   matriculas?: Matricula[];
   curso_id?: string | null;
+  turma_id?: string | null;
 };
 
 export type Matricula = {
   id: string;
   curso_id: string;
+  turma_id?: string | null;
   data_matricula?: string | null;
   cursos?: {
     titulo: string;
@@ -78,6 +80,12 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
   >([]);
   const [isLoadingCursos, setIsLoadingCursos] = useState(false);
 
+  // Turmas disponíveis
+  const [turmas, setTurmas] = useState<
+    { id: string; nome: string; curso_id: string; turno: string | null }[]
+  >([]);
+  const [isLoadingTurmas, setIsLoadingTurmas] = useState(false);
+
   const [formData, setFormData] = useState<Partial<Aluno>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
@@ -98,7 +106,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
 
         const { data, error } = await supabase
           .from("matriculas")
-          .select("id, curso_id, data_matricula, cursos(titulo)")
+          .select("id, curso_id, turma_id, data_matricula, cursos(titulo)")
           .eq("aluno_id", selectedAluno.id);
 
         if (!error && data) {
@@ -140,6 +148,33 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     };
 
     fetchCursos();
+  }, []);
+
+  /*
+   * ============================================================
+   * BUSCAR TURMAS
+   * ============================================================
+   */
+  useEffect(() => {
+    const fetchTurmas = async () => {
+      setIsLoadingTurmas(true);
+
+      const { data, error } = await supabase
+        .from("turmas")
+        .select("id, nome, curso_id, turno")
+        .order("nome", { ascending: true });
+
+      if (!error && data) {
+        setTurmas(data);
+      } else if (error) {
+        console.error("Erro ao carregar turmas:", error.message);
+        setTurmas([]);
+      }
+
+      setIsLoadingTurmas(false);
+    };
+
+    fetchTurmas();
   }, []);
 
   /*
@@ -280,6 +315,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
       nis: false,
       idade: undefined,
       curso_id: "",
+      turma_id: "",
       tags_perfil: [],
     });
 
@@ -297,14 +333,13 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
     e.preventDefault();
     e.stopPropagation();
 
-    const cursoAtual =
-      matriculas.length > 0
-        ? matriculas[0].curso_id
-        : "";
+    const matriculaAtual =
+      matriculas.length > 0 ? matriculas[0] : null;
 
     setFormData({
       ...(selectedAluno || {}),
-      curso_id: cursoAtual,
+      curso_id: matriculaAtual?.curso_id || "",
+      turma_id: matriculaAtual?.turma_id || "",
     });
 
     setIsEditing(true);
@@ -440,6 +475,11 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
       return;
     }
 
+    if (!formData.turma_id) {
+      alert("Selecione a turma do aluno antes de salvar.");
+      return;
+    }
+
     if (!formData.idade) {
       alert("Informe a idade do aluno.");
       return;
@@ -561,6 +601,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
             {
               aluno_id: alunoId,
               curso_id: formData.curso_id,
+              turma_id: formData.turma_id || null,
               operador_id: operadorId,
               data_matricula:
                 new Date().toISOString(),
@@ -615,7 +656,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
           error: buscaMatriculaError,
         } = await supabase
           .from("matriculas")
-          .select("id, curso_id")
+          .select("id, curso_id, turma_id")
           .eq("aluno_id", selectedAluno.id)
           .order("data_matricula", {
             ascending: false,
@@ -636,8 +677,8 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
          */
         if (matriculaAtual) {
           if (
-            matriculaAtual.curso_id !==
-            formData.curso_id
+            matriculaAtual.curso_id !== formData.curso_id ||
+            (matriculaAtual.turma_id || null) !== (formData.turma_id || null)
           ) {
             const {
               error: updateMatriculaError,
@@ -645,6 +686,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
               .from("matriculas")
               .update({
                 curso_id: formData.curso_id,
+                turma_id: formData.turma_id || null,
               })
               .eq("id", matriculaAtual.id);
 
@@ -1578,6 +1620,47 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
 
                       <p className="text-xs text-blue-700 mt-2">
                         O curso selecionado será usado para criar ou atualizar a matrícula do aluno.
+                      </p>
+                    </div>
+
+                    {/* TURMA */}
+                    <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-md">
+                      <div className="flex items-center gap-2 mb-2">
+                        <BookOpen className="w-4 h-4 text-emerald-600" />
+                        <label className="block text-sm font-bold text-emerald-900">
+                          Turma do aluno
+                        </label>
+                      </div>
+
+                      <select
+                        required
+                        disabled={!formData.curso_id || isLoadingTurmas}
+                        value={formData.turma_id || ""}
+                        onChange={(e) =>
+                          handleInputChange("turma_id", e.target.value)
+                        }
+                        className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-md text-slate-900 focus:outline-none focus:border-emerald-500 text-sm disabled:bg-emerald-50/50"
+                      >
+                        <option value="">
+                          {isLoadingTurmas
+                            ? "Carregando turmas..."
+                            : !formData.curso_id
+                            ? "Selecione primeiro o curso"
+                            : "Selecione uma turma"}
+                        </option>
+
+                        {turmas
+                          .filter((turma) => turma.curso_id === formData.curso_id)
+                          .map((turma) => (
+                            <option key={turma.id} value={turma.id}>
+                              {turma.nome}
+                              {turma.turno ? ` — ${turma.turno}` : ""}
+                            </option>
+                          ))}
+                      </select>
+
+                      <p className="text-xs text-emerald-700 mt-2">
+                        A turma é usada para mostrar o aluno corretamente no check-in manual.
                       </p>
                     </div>
 
