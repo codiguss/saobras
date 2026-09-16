@@ -1,3 +1,4 @@
+```tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -16,6 +17,8 @@ import {
   Clock,
   ChevronRight,
   CalendarDays,
+  Filter,
+  RotateCcw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -61,18 +64,25 @@ export default function FormCheckin() {
   });
 
   const [turmaSelecionadaId, setTurmaSelecionadaId] = useState("");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [buscaTurma, setBuscaTurma] = useState("");
+
+  // ==========================================================
+  // FILTROS
+  // ==========================================================
+
+  const [filtroCurso, setFiltroCurso] = useState("");
+  const [filtroTurno, setFiltroTurno] = useState("");
+  const [filtroTurma, setFiltroTurma] = useState("");
 
   const [frequencia, setFrequencia] = useState<
     Record<string, PresencaState>
   >({});
 
-  /*
-   * ==========================================================
-   * TURMA SELECIONADA
-   * ==========================================================
-   */
+  // ==========================================================
+  // TURMA SELECIONADA
+  // ==========================================================
 
   const turmaSelecionada = useMemo(() => {
     return turmas.find((t) => t.id === turmaSelecionadaId);
@@ -86,15 +96,9 @@ export default function FormCheckin() {
     );
   }, [cursos, turmaSelecionada]);
 
-  /*
-   * ==========================================================
-   * CARREGAR CURSOS E TURMAS
-   * ==========================================================
-   *
-   * IMPORTANTE:
-   * Mantive a consulta original que já estava funcionando.
-   * Não faço auth.getUser() antes de carregar as turmas.
-   */
+  // ==========================================================
+  // CARREGAR CURSOS E TURMAS
+  // ==========================================================
 
   useEffect(() => {
     const carregarDadosBase = async () => {
@@ -116,10 +120,6 @@ export default function FormCheckin() {
             .order("nome"),
         ]);
 
-        /*
-         * ERRO NOS CURSOS
-         */
-
         if (resCursos.error) {
           console.error(
             "Erro ao carregar cursos:",
@@ -131,10 +131,6 @@ export default function FormCheckin() {
               resCursos.error.message
           );
         }
-
-        /*
-         * ERRO NAS TURMAS
-         */
 
         if (resTurmas.error) {
           console.error(
@@ -148,10 +144,6 @@ export default function FormCheckin() {
           );
         }
 
-        /*
-         * SALVAR DADOS
-         */
-
         setCursos(
           (resCursos.data || []) as Curso[]
         );
@@ -159,10 +151,6 @@ export default function FormCheckin() {
         setTurmas(
           (resTurmas.data || []) as Turma[]
         );
-
-        /*
-         * DEBUG NO CONSOLE
-         */
 
         console.log(
           "Cursos carregados:",
@@ -191,11 +179,9 @@ export default function FormCheckin() {
     carregarDadosBase();
   }, []);
 
-  /*
-   * ==========================================================
-   * CARREGAR ALUNOS E PRESENÇAS
-   * ==========================================================
-   */
+  // ==========================================================
+  // CARREGAR ALUNOS E PRESENÇAS
+  // ==========================================================
 
   useEffect(() => {
     if (!turmaSelecionadaId || !dataSelecionada) {
@@ -211,9 +197,9 @@ export default function FormCheckin() {
       setFrequencia({});
 
       try {
-        /*
-         * 1. BUSCAR MATRÍCULAS DA TURMA
-         */
+        // ======================================================
+        // 1. BUSCAR MATRÍCULAS DA TURMA
+        // ======================================================
 
         const {
           data: matriculas,
@@ -235,9 +221,9 @@ export default function FormCheckin() {
           )
         );
 
-        /*
-         * SE NÃO EXISTIR ALUNO
-         */
+        // ======================================================
+        // SE NÃO EXISTIR ALUNO
+        // ======================================================
 
         if (alunoIds.length === 0) {
           setAlunos([]);
@@ -245,9 +231,9 @@ export default function FormCheckin() {
           return;
         }
 
-        /*
-         * 2. BUSCAR ALUNOS
-         */
+        // ======================================================
+        // 2. BUSCAR ALUNOS
+        // ======================================================
 
         const {
           data: alunosData,
@@ -266,9 +252,9 @@ export default function FormCheckin() {
           (alunosData || []) as Aluno[]
         );
 
-        /*
-         * 3. BUSCAR PRESENÇAS DO DIA
-         */
+        // ======================================================
+        // 3. BUSCAR PRESENÇAS DO DIA
+        // ======================================================
 
         const dataFiltroInicio =
           `${dataSelecionada}T00:00:00.000Z`;
@@ -290,11 +276,9 @@ export default function FormCheckin() {
           throw presencasError;
         }
 
-        /*
-         * 4. MONTAR FREQUÊNCIA
-         *
-         * Por padrão todos começam como falta.
-         */
+        // ======================================================
+        // 4. MONTAR FREQUÊNCIA
+        // ======================================================
 
         const freqInicial: Record<
           string,
@@ -307,10 +291,6 @@ export default function FormCheckin() {
             presencaIdNoBanco: null,
           };
         });
-
-        /*
-         * Quem estiver no banco fica como presente.
-         */
 
         (presencasData || []).forEach((p) => {
           if (freqInicial[p.aluno_id]) {
@@ -343,11 +323,9 @@ export default function FormCheckin() {
     carregarTurmaAtual();
   }, [turmaSelecionadaId, dataSelecionada]);
 
-  /*
-   * ==========================================================
-   * ALTERAR PRESENÇA
-   * ==========================================================
-   */
+  // ==========================================================
+  // ALTERAR PRESENÇA
+  // ==========================================================
 
   const togglePresenca = (alunoId: string) => {
     setFrequencia((prev) => {
@@ -369,11 +347,9 @@ export default function FormCheckin() {
     setSucesso("");
   };
 
-  /*
-   * ==========================================================
-   * MARCAR TODOS
-   * ==========================================================
-   */
+  // ==========================================================
+  // MARCAR TODOS
+  // ==========================================================
 
   const marcarTodos = (presente: boolean) => {
     setFrequencia((prev) => {
@@ -392,11 +368,9 @@ export default function FormCheckin() {
     setSucesso("");
   };
 
-  /*
-   * ==========================================================
-   * OPERADOR LOGADO
-   * ==========================================================
-   */
+  // ==========================================================
+  // OPERADOR LOGADO
+  // ==========================================================
 
   const getOperadorId = async () => {
     const {
@@ -434,11 +408,9 @@ export default function FormCheckin() {
     return op.id;
   };
 
-  /*
-   * ==========================================================
-   * SALVAR FREQUÊNCIA
-   * ==========================================================
-   */
+  // ==========================================================
+  // SALVAR FREQUÊNCIA
+  // ==========================================================
 
   const handleSalvar = async () => {
     if (
@@ -464,9 +436,7 @@ export default function FormCheckin() {
 
       Object.entries(frequencia).forEach(
         ([alunoId, state]) => {
-          /*
-           * MARCAR COMO PRESENTE
-           */
+          // MARCAR COMO PRESENTE
 
           if (
             state.presente &&
@@ -485,9 +455,7 @@ export default function FormCheckin() {
             });
           }
 
-          /*
-           * REMOVER PRESENÇA
-           */
+          // REMOVER PRESENÇA
 
           if (
             !state.presente &&
@@ -500,9 +468,7 @@ export default function FormCheckin() {
         }
       );
 
-      /*
-       * NENHUMA ALTERAÇÃO
-       */
+      // NENHUMA ALTERAÇÃO
 
       if (
         insercoes.length === 0 &&
@@ -515,9 +481,7 @@ export default function FormCheckin() {
         return;
       }
 
-      /*
-       * EXCLUIR PRESENÇAS
-       */
+      // EXCLUIR PRESENÇAS
 
       if (exclusoes.length > 0) {
         const {
@@ -532,9 +496,7 @@ export default function FormCheckin() {
         }
       }
 
-      /*
-       * INSERIR PRESENÇAS
-       */
+      // INSERIR PRESENÇAS
 
       if (insercoes.length > 0) {
         const {
@@ -551,10 +513,6 @@ export default function FormCheckin() {
       setSucesso(
         "Frequência salva com sucesso!"
       );
-
-      /*
-       * Recarregar os dados
-       */
 
       const idTurmaAtual =
         turmaSelecionadaId;
@@ -582,11 +540,9 @@ export default function FormCheckin() {
     }
   };
 
-  /*
-   * ==========================================================
-   * FILTRO DE ALUNOS
-   * ==========================================================
-   */
+  // ==========================================================
+  // FILTRO DE ALUNOS
+  // ==========================================================
 
   const alunosFiltrados = useMemo(() => {
     if (!searchTerm.trim()) {
@@ -603,49 +559,130 @@ export default function FormCheckin() {
     );
   }, [alunos, searchTerm]);
 
-  /*
-   * ==========================================================
-   * FILTRO DE TURMAS
-   * ==========================================================
-   */
+  // ==========================================================
+  // TURNOS DISPONÍVEIS
+  // ==========================================================
 
-  const turmasFiltradas = useMemo(() => {
-    if (!buscaTurma.trim()) {
-      return turmas;
-    }
-
-    const termo =
-      buscaTurma.toLowerCase();
-
-    return turmas.filter((turma) => {
-      const curso = cursos.find(
-        (c) =>
-          c.id === turma.curso_id
+  const turnosDisponiveis = useMemo(() => {
+    const turnos = turmas
+      .map((turma) => turma.turno)
+      .filter(
+        (turno): turno is string =>
+          Boolean(turno)
       );
 
-      const texto = [
-        turma.nome,
-        curso?.titulo || "",
-        turma.turno || "",
-        turma.horario || "",
-        ...(turma.dias_semana || []),
-      ]
-        .join(" ")
-        .toLowerCase();
+    return Array.from(
+      new Set(turnos)
+    ).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [turmas]);
 
-      return texto.includes(termo);
+  // ==========================================================
+  // TURMAS DISPONÍVEIS DE ACORDO COM O CURSO E TURNO
+  // ==========================================================
+
+  const turmasParaSelect = useMemo(() => {
+    return turmas.filter((turma) => {
+      const correspondeCurso =
+        !filtroCurso ||
+        turma.curso_id === filtroCurso;
+
+      const correspondeTurno =
+        !filtroTurno ||
+        turma.turno === filtroTurno;
+
+      return (
+        correspondeCurso &&
+        correspondeTurno
+      );
+    });
+  }, [
+    turmas,
+    filtroCurso,
+    filtroTurno,
+  ]);
+
+  // ==========================================================
+  // TURMAS FILTRADAS
+  // ==========================================================
+
+  const turmasFiltradas = useMemo(() => {
+    const termo =
+      buscaTurma.trim().toLowerCase();
+
+    return turmas.filter((turma) => {
+      // FILTRO POR CURSO
+      if (
+        filtroCurso &&
+        turma.curso_id !== filtroCurso
+      ) {
+        return false;
+      }
+
+      // FILTRO POR TURNO
+      if (
+        filtroTurno &&
+        turma.turno !== filtroTurno
+      ) {
+        return false;
+      }
+
+      // FILTRO POR TURMA
+      if (
+        filtroTurma &&
+        turma.id !== filtroTurma
+      ) {
+        return false;
+      }
+
+      // BUSCA POR TEXTO
+      if (termo) {
+        const curso = cursos.find(
+          (c) =>
+            c.id === turma.curso_id
+        );
+
+        const texto = [
+          turma.nome,
+          curso?.titulo || "",
+          turma.turno || "",
+          turma.horario || "",
+          ...(turma.dias_semana || []),
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        if (!texto.includes(termo)) {
+          return false;
+        }
+      }
+
+      return true;
     });
   }, [
     turmas,
     cursos,
     buscaTurma,
+    filtroCurso,
+    filtroTurno,
+    filtroTurma,
   ]);
 
-  /*
-   * ==========================================================
-   * QUANTIDADE DE PRESENTES E FALTAS
-   * ==========================================================
-   */
+  // ==========================================================
+  // LIMPAR FILTROS
+  // ==========================================================
+
+  const limparFiltros = () => {
+    setFiltroCurso("");
+    setFiltroTurno("");
+    setFiltroTurma("");
+    setBuscaTurma("");
+  };
+
+  // ==========================================================
+  // QUANTIDADE DE PRESENTES E FALTAS
+  // ==========================================================
 
   const qtdPresentes =
     Object.values(frequencia).filter(
@@ -655,11 +692,9 @@ export default function FormCheckin() {
   const qtdFaltas =
     alunos.length - qtdPresentes;
 
-  /*
-   * ==========================================================
-   * DATA FORMATADA
-   * ==========================================================
-   */
+  // ==========================================================
+  // DATA FORMATADA
+  // ==========================================================
 
   const dataFormatada = useMemo(() => {
     if (!dataSelecionada) {
@@ -676,18 +711,16 @@ export default function FormCheckin() {
     return `${partes[2]}/${partes[1]}/${partes[0]}`;
   }, [dataSelecionada]);
 
-  /*
-   * ==========================================================
-   * TELA
-   * ==========================================================
-   */
+  // ==========================================================
+  // TELA
+  // ==========================================================
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-10">
 
-      {/* ====================================================
+      {/* ======================================================
           CABEÇALHO
-      ===================================================== */}
+      ====================================================== */}
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
 
@@ -743,9 +776,9 @@ export default function FormCheckin() {
 
       </div>
 
-      {/* ====================================================
+      {/* ======================================================
           ERRO
-      ===================================================== */}
+      ====================================================== */}
 
       {erro && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700">
@@ -768,9 +801,9 @@ export default function FormCheckin() {
         </div>
       )}
 
-      {/* ====================================================
+      {/* ======================================================
           SUCESSO
-      ===================================================== */}
+      ====================================================== */}
 
       {sucesso && (
         <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700">
@@ -793,9 +826,9 @@ export default function FormCheckin() {
         </div>
       )}
 
-      {/* ====================================================
+      {/* ======================================================
           SELEÇÃO DAS TURMAS
-      ===================================================== */}
+      ====================================================== */}
 
       {!turmaSelecionadaId && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -804,51 +837,234 @@ export default function FormCheckin() {
 
           <div className="p-6 border-b border-slate-200">
 
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                <Filter className="w-5 h-5 text-blue-600" />
+              </div>
 
               <div>
-
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-blue-600" />
-
-                  Selecione a Turma
+                <h2 className="text-lg font-bold text-slate-900">
+                  Organizar chamada
                 </h2>
 
                 <p className="text-sm text-slate-500 mt-1">
-                  Escolha uma turma para
-                  realizar a chamada.
+                  Filtre por curso, turno ou turma
+                  para encontrar rapidamente a chamada.
                 </p>
-
               </div>
-
-              {/* PESQUISA */}
-
-              {!isLoadingInitial &&
-                turmas.length > 0 && (
-                  <div className="relative w-full md:w-80">
-
-                    <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-
-                    <input
-                      type="text"
-                      value={buscaTurma}
-                      onChange={(e) =>
-                        setBuscaTurma(
-                          e.target.value
-                        )
-                      }
-                      placeholder="Buscar turma ou curso..."
-                      className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-
-                  </div>
-                )}
 
             </div>
 
           </div>
 
-          {/* CONTEÚDO */}
+          {/* ==================================================
+              FILTROS
+          ================================================== */}
+
+          <div className="p-6 bg-slate-50 border-b border-slate-200">
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+
+              {/* CURSO */}
+
+              <div>
+
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Curso / Matéria
+                </label>
+
+                <select
+                  value={filtroCurso}
+                  onChange={(e) => {
+                    setFiltroCurso(
+                      e.target.value
+                    );
+
+                    setFiltroTurma("");
+                  }}
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+
+                  <option value="">
+                    Todos os cursos
+                  </option>
+
+                  {cursos.map((curso) => (
+                    <option
+                      key={curso.id}
+                      value={curso.id}
+                    >
+                      {curso.titulo}
+                    </option>
+                  ))}
+
+                </select>
+
+              </div>
+
+              {/* TURNO */}
+
+              <div>
+
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Turno
+                </label>
+
+                <select
+                  value={filtroTurno}
+                  onChange={(e) => {
+                    setFiltroTurno(
+                      e.target.value
+                    );
+
+                    setFiltroTurma("");
+                  }}
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+
+                  <option value="">
+                    Todos os turnos
+                  </option>
+
+                  {turnosDisponiveis.map(
+                    (turno) => (
+                      <option
+                        key={turno}
+                        value={turno}
+                      >
+                        {turno}
+                      </option>
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+              {/* TURMA */}
+
+              <div>
+
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Turma
+                </label>
+
+                <select
+                  value={filtroTurma}
+                  onChange={(e) =>
+                    setFiltroTurma(
+                      e.target.value
+                    )
+                  }
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+
+                  <option value="">
+                    Todas as turmas
+                  </option>
+
+                  {turmasParaSelect.map(
+                    (turma) => (
+                      <option
+                        key={turma.id}
+                        value={turma.id}
+                      >
+                        {turma.nome}
+                      </option>
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+              {/* BUSCA */}
+
+              <div>
+
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Pesquisar
+                </label>
+
+                <div className="relative">
+
+                  <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+                  <input
+                    type="text"
+                    value={buscaTurma}
+                    onChange={(e) =>
+                      setBuscaTurma(
+                        e.target.value
+                      )
+                    }
+                    placeholder="Nome da turma..."
+                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* FILTROS ATIVOS */}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5">
+
+              <div className="flex flex-wrap items-center gap-2">
+
+                <span className="text-sm text-slate-500 font-medium">
+                  {turmasFiltradas.length}{" "}
+                  {turmasFiltradas.length === 1
+                    ? "turma encontrada"
+                    : "turmas encontradas"}
+                </span>
+
+                {filtroCurso && (
+                  <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
+                    Curso selecionado
+                  </span>
+                )}
+
+                {filtroTurno && (
+                  <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold">
+                    Turno: {filtroTurno}
+                  </span>
+                )}
+
+                {filtroTurma && (
+                  <span className="px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold">
+                    Turma selecionada
+                  </span>
+                )}
+
+              </div>
+
+              {(filtroCurso ||
+                filtroTurno ||
+                filtroTurma ||
+                buscaTurma) && (
+                <button
+                  type="button"
+                  onClick={
+                    limparFiltros
+                  }
+                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-semibold text-sm"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Limpar filtros
+                </button>
+              )}
+
+            </div>
+
+          </div>
+
+          {/* ==================================================
+              LISTA DE TURMAS
+          ================================================== */}
 
           <div className="p-6">
 
@@ -871,18 +1087,11 @@ export default function FormCheckin() {
                   Nenhuma turma encontrada
                 </h3>
 
-                <p className="text-sm text-slate-500 mt-2">
+                <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">
                   Não existem turmas cadastradas
                   ou a consulta ao banco retornou
                   algum erro.
                 </p>
-
-                {erro && (
-                  <p className="text-xs text-red-500 mt-3">
-                    Verifique a mensagem de erro
-                    acima.
-                  </p>
-                )}
 
               </div>
             ) : turmasFiltradas.length === 0 ? (
@@ -892,17 +1101,18 @@ export default function FormCheckin() {
 
                 <p className="font-semibold text-slate-600">
                   Nenhuma turma encontrada
-                  para essa busca.
+                  com esses filtros.
                 </p>
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setBuscaTurma("")
+                  onClick={
+                    limparFiltros
                   }
-                  className="mt-3 text-sm text-blue-600 font-semibold hover:text-blue-700"
+                  className="mt-4 inline-flex items-center gap-2 text-sm text-blue-600 font-semibold hover:text-blue-700"
                 >
-                  Limpar busca
+                  <RotateCcw className="w-4 h-4" />
+                  Limpar filtros
                 </button>
 
               </div>
@@ -980,8 +1190,6 @@ export default function FormCheckin() {
 
                         <div className="mt-5 space-y-3">
 
-                          {/* HORÁRIO */}
-
                           {turma.horario && (
                             <div className="flex items-center gap-3">
 
@@ -1008,8 +1216,6 @@ export default function FormCheckin() {
 
                             </div>
                           )}
-
-                          {/* DIAS */}
 
                           {dias.length >
                             0 && (
@@ -1073,9 +1279,9 @@ export default function FormCheckin() {
         </div>
       )}
 
-      {/* ====================================================
+      {/* ======================================================
           CHAMADA
-      ===================================================== */}
+      ====================================================== */}
 
       {turmaSelecionadaId && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1111,6 +1317,13 @@ export default function FormCheckin() {
                       <span className="flex items-center gap-1.5">
                         <Clock className="w-4 h-4" />
                         {turmaSelecionada.horario}
+                      </span>
+                    )}
+
+                    {turmaSelecionada?.turno && (
+                      <span className="flex items-center gap-1.5">
+                        <Filter className="w-4 h-4" />
+                        {turmaSelecionada.turno}
                       </span>
                     )}
 
@@ -1161,7 +1374,7 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* =================================================
+          {/* ==================================================
               RESUMO
           ================================================== */}
 
@@ -1259,7 +1472,7 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* =================================================
+          {/* ==================================================
               ALUNOS
           ================================================== */}
 
@@ -1482,7 +1695,7 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* =================================================
+          {/* ==================================================
               BOTÃO SALVAR
           ================================================== */}
 
@@ -1533,3 +1746,4 @@ export default function FormCheckin() {
     </div>
   );
 }
+```
