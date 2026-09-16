@@ -358,25 +358,33 @@ export function CursosClient({ cursos, turmas: serverTurmas }: { cursos: Curso[]
                         <div className="w-full h-full flex flex-col gap-2 min-h-[100px]">
                           {turmasNoDia.map(turma => {
                             const turmaColor = COLOR_THEMES[getColorForId(turma.curso_id)];
+                            const match = turma.nome.match(/\b([A-Za-z])\b/);
+                            const watermark = match ? match[1].toUpperCase() : null;
+
                             return (
                               <div 
                                 key={turma.id} 
                                 onClick={() => { setEditingTurma({...turma, horario: getHorarioLabel(turma)}); setIsTurmaModalOpen(true); }} 
-                                className={`group relative flex-1 flex flex-col items-start justify-center p-3 rounded-md cursor-pointer transition-all text-left border-l-4 shadow-sm ${turmaColor.gridCard}`}
+                                className={`group relative overflow-hidden flex-1 flex flex-col items-start justify-center p-3 rounded-md cursor-pointer transition-all text-left border-l-4 shadow-sm ${turmaColor.gridCard}`}
                               >
+                                {watermark && (
+                                  <div className="absolute -right-2 -bottom-4 text-7xl font-black text-black opacity-10 pointer-events-none select-none z-0">
+                                    {watermark}
+                                  </div>
+                                )}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleDeleteTurma(turma.id);
                                   }}
-                                  className="absolute top-1.5 right-1.5 p-1 text-slate-400 hover:text-red-600 hover:bg-white/80 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  className="absolute top-1.5 right-1.5 p-1 text-slate-400 hover:text-red-600 hover:bg-white/80 rounded opacity-0 group-hover:opacity-100 transition-opacity z-20"
                                   title="Excluir turma"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                                <div className="font-bold text-slate-800 text-sm leading-tight mb-1 pr-5">{turma.nome}</div>
-                                <div className={`text-xs font-medium line-clamp-1 mb-2 ${turmaColor.gridTextSub}`}>{(Array.isArray(turma.cursos) ? turma.cursos[0]?.titulo : turma.cursos?.titulo) || "Curso Indefinido"}</div>
-                                <div className={`mt-auto inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${turmaColor.badge}`}>
+                                <div className="font-bold text-slate-800 text-sm leading-tight mb-1 pr-5 relative z-10">{turma.nome}</div>
+                                <div className={`text-xs font-medium line-clamp-1 mb-2 relative z-10 ${turmaColor.gridTextSub}`}>{(Array.isArray(turma.cursos) ? turma.cursos[0]?.titulo : turma.cursos?.titulo) || "Curso Indefinido"}</div>
+                                <div className={`mt-auto inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border relative z-10 ${turmaColor.badge}`}>
                                   {turma.vagas || 30} vagas
                                 </div>
                               </div>

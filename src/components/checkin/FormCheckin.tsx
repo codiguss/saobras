@@ -1,14 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   Check,
   Loader2,
   Users,
   AlertCircle,
-  RefreshCw,
+  Calendar as CalendarIcon,
+  Search,
+  BookOpen,
+  UserCheck,
+  UserX,
+  X,
+  Save,
+  Clock
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+
+type Curso = {
+  id: string;
+  titulo: string;
+};
 
 type Turma = {
   id: string;
@@ -16,6 +28,7 @@ type Turma = {
   curso_id: string;
   turno: string | null;
   horario: string | null;
+  dias_semana: string[] | null;
 };
 
 type Aluno = {
@@ -23,816 +36,475 @@ type Aluno = {
   nome_completo: string;
 };
 
-type Presenca = {
-  id: string;
-  aluno_id: string;
+type PresencaState = {
+  presente: boolean;
+  presencaIdNoBanco: string | null; // Se existir no banco, guarda o ID para poder deletar depois se necessário
 };
 
 export default function FormCheckin() {
+  const [cursos, setCursos] = useState<Curso[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
-  const [turmaId, setTurmaId] = useState("");
-
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [presentes, setPresentes] = useState<Set<string>>(new Set());
-
-  const [isLoadingTurmas, setIsLoadingTurmas] = useState(true);
+  
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [isLoadingAlunos, setIsLoadingAlunos] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
+  
   const [erro, setErro] = useState("");
-  const [mensagem, setMensagem] = useState("");
+  const [sucesso, setSucesso] = useState("");
+
+  const [dataSelecionada, setDataSelecionada] = useState<string>(() => {
+    const hoje = new Date();
+    return hoje.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  });
+
+  const [turmaSelecionadaId, setTurmaSelecionadaId] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Estado das presenças: Mapeia aluno_id para o estado de presença dele
+  const [frequencia, setFrequencia] = useState<Record<string, PresencaState>>({});
 
   const turmaSelecionada = useMemo(
-    () => turmas.find((turma) => turma.id === turmaId),
-    [turmas, turmaId]
+    () => turmas.find((t) => t.id === turmaSelecionadaId),
+    [turmas, turmaSelecionadaId]
   );
 
-  /*
-   * ============================================================
-   * CARREGAR TURMAS
-   * ============================================================
-   *
-   * IMPORTANTE:
-   * Não usamos cursos(titulo) aqui.
-   * A consulta é direta na tabela turmas.
-   */
-  const carregarTurmas = async () => {
-    setIsLoadingTurmas(true);
-    setErro("");
-    setMensagem("");
+  const cursoDaTurma = useMemo(
+    () => cursos.find((c) => c.id === turmaSelecionada?.curso_id),
+    [cursos, turmaSelecionada]
+  );
 
-    try {
-      // Verifica se existe usuário autenticado
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        console.error("ERRO AO VERIFICAR USUÁRIO:", authError);
-      }
-
-      if (!user) {
-        setErro(
-          "Usuário não está autenticado. Faça login novamente no sistema."
-        );
-        setTurmas([]);
-        return;
-      }
-
-      console.log("USUÁRIO AUTENTICADO:", user.id);
-
-      /*
-       * Consulta DIRETA em turmas.
-       * Não depende de relacionamento com cursos.
-       */
-      const { data, error } = await supabase
-        .from("turmas")
-        .select("id, nome, curso_id, turno, horario")
-        .order("nome", { ascending: true });
-
-      console.log("RESULTADO DA CONSULTA DE TURMAS:", data);
-      console.log("ERRO DA CONSULTA DE TURMAS:", error);
-
-      if (error) {
-        console.error("ERRO AO BUSCAR TURMAS:", error);
-
-        setErro(
-          `Não foi possível carregar as turmas. ${error.message}`
-        );
-
-        setTurmas([]);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        console.warn(
-          "A CONSULTA FUNCIONOU, MAS NÃO RETORNOU NENHUMA TURMA."
-        );
-
-        setTurmas([]);
-
-        setErro(
-          "Nenhuma turma foi encontrada para este usuário."
-        );
-
-        return;
-      }
-
-      console.log("TURMAS ENCONTRADAS:", data);
-
-      setTurmas(data as Turma[]);
-    } catch (error) {
-      console.error("ERRO INESPERADO AO CARREGAR TURMAS:", error);
-
-      setTurmas([]);
-
-      setErro(
-        error instanceof Error
-          ? error.message
-          : "Erro inesperado ao carregar as turmas."
-      );
-    } finally {
-      setIsLoadingTurmas(false);
-    }
-  };
-
+  // Inicialização (Cursos e Turmas)
   useEffect(() => {
-    carregarTurmas();
+    const carregarDadosBase = async () => {
+      setIsLoadingInitial(true);
+      setErro("");
+
+      const { data: userData, error: authError } = await supabase.auth.getUser();
+      if (authError || !userData?.user) {
+        setErro("Usuário não autenticado. Faça login novamente.");
+        setIsLoadingInitial(false);
+        return;
+      }
+
+      const [resCursos, resTurmas] = await Promise.all([
+        supabase.from("cursos").select("id, titulo").order("titulo"),
+        supabase.from("turmas").select("id, nome, curso_id, turno, horario, dias_semana").order("nome")
+      ]);
+
+      if (resCursos.error) console.error(resCursos.error);
+      if (resTurmas.error) console.error(resTurmas.error);
+
+      setCursos(resCursos.data || []);
+      setTurmas(resTurmas.data || []);
+      
+      setIsLoadingInitial(false);
+    };
+
+    carregarDadosBase();
   }, []);
 
-  /*
-   * ============================================================
-   * CARREGAR ALUNOS DA TURMA
-   * ============================================================
-   */
+  // Carregar Alunos e Presenças quando a Turma e a Data mudam
   useEffect(() => {
-    if (!turmaId) {
+    if (!turmaSelecionadaId || !dataSelecionada) {
       setAlunos([]);
-      setPresentes(new Set());
+      setFrequencia({});
       return;
     }
 
-    const carregarAlunos = async () => {
+    const carregarTurmaAtual = async () => {
       setIsLoadingAlunos(true);
       setErro("");
-      setMensagem("");
-      setPresentes(new Set());
+      setSucesso("");
+      setFrequencia({});
 
       try {
-        /*
-         * Primeiro buscamos as matrículas que pertencem
-         * à turma selecionada.
-         */
-        const {
-          data: matriculas,
-          error: matriculasError,
-        } = await supabase
+        // 1. Busca matrículas da turma
+        const { data: matriculas, error: matriculasError } = await supabase
           .from("matriculas")
           .select("aluno_id")
-          .eq("turma_id", turmaId);
+          .eq("turma_id", turmaSelecionadaId);
 
-        console.log(
-          "MATRÍCULAS DA TURMA:",
-          matriculas
-        );
+        if (matriculasError) throw matriculasError;
 
-        if (matriculasError) {
-          console.error(
-            "ERRO AO BUSCAR MATRÍCULAS:",
-            matriculasError
-          );
-
-          setErro(
-            `Não foi possível carregar os alunos da turma. ${matriculasError.message}`
-          );
-
-          setAlunos([]);
-          return;
-        }
-
-        const alunoIds = Array.from(
-          new Set(
-            (matriculas || [])
-              .map((matricula) => matricula.aluno_id)
-              .filter(Boolean)
-          )
-        );
-
-        console.log("IDS DOS ALUNOS:", alunoIds);
+        const alunoIds = Array.from(new Set((matriculas || []).map(m => m.aluno_id).filter(Boolean)));
 
         if (alunoIds.length === 0) {
           setAlunos([]);
-
-          setErro(
-            "Essa turma não possui alunos matriculados. Verifique se o campo turma_id das matrículas está preenchido."
-          );
-
+          setIsLoadingAlunos(false);
           return;
         }
 
-        /*
-         * Agora buscamos os alunos.
-         */
-        const {
-          data: alunosData,
-          error: alunosError,
-        } = await supabase
+        // 2. Busca dados dos alunos
+        const { data: alunosData, error: alunosError } = await supabase
           .from("alunos")
           .select("id, nome_completo")
           .in("id", alunoIds)
-          .order("nome_completo", {
-            ascending: true,
-          });
+          .order("nome_completo");
 
-        console.log(
-          "ALUNOS ENCONTRADOS:",
-          alunosData
-        );
-
-        if (alunosError) {
-          console.error(
-            "ERRO AO BUSCAR ALUNOS:",
-            alunosError
-          );
-
-          setErro(
-            `Não foi possível carregar os alunos. ${alunosError.message}`
-          );
-
-          setAlunos([]);
-          return;
-        }
-
+        if (alunosError) throw alunosError;
         setAlunos((alunosData || []) as Aluno[]);
 
-        /*
-         * ========================================================
-         * VERIFICAR PRESENÇAS JÁ REGISTRADAS HOJE
-         * ========================================================
-         */
+        // 3. Busca presenças DESSA DATA E TURMA no banco
+        const dataFiltroInicio = `${dataSelecionada}T00:00:00.000Z`;
+        const dataFiltroFim = `${dataSelecionada}T23:59:59.999Z`;
 
-        const inicioDoDia = new Date();
-        inicioDoDia.setHours(0, 0, 0, 0);
-
-        const fimDoDia = new Date();
-        fimDoDia.setHours(23, 59, 59, 999);
-
-        const {
-          data: presencasData,
-          error: presencasError,
-        } = await supabase
+        const { data: presencasData, error: presencasError } = await supabase
           .from("presencas")
           .select("id, aluno_id")
-          .eq("turma_id", turmaId)
-          .gte(
-            "data_hora",
-            inicioDoDia.toISOString()
-          )
-          .lte(
-            "data_hora",
-            fimDoDia.toISOString()
-          );
+          .eq("turma_id", turmaSelecionadaId)
+          .gte("data_hora", dataFiltroInicio)
+          .lte("data_hora", dataFiltroFim);
 
-        if (presencasError) {
-          console.error(
-            "ERRO AO BUSCAR PRESENÇAS:",
-            presencasError
-          );
+        if (presencasError) throw presencasError;
 
-          /*
-           * Não impedimos o usuário de fazer a chamada
-           * se a consulta de presenças falhar.
-           */
-          setPresentes(new Set());
-        } else {
-          const idsPresentes = new Set(
-            ((presencasData || []) as Presenca[]).map(
-              (presenca) => presenca.aluno_id
-            )
-          );
+        // 4. Monta o estado inicial de frequencia
+        const freqInicial: Record<string, PresencaState> = {};
+        
+        // Define todos como falta por padrão
+        alunoIds.forEach(id => {
+          freqInicial[id] = { presente: false, presencaIdNoBanco: null };
+        });
 
-          setPresentes(idsPresentes);
-        }
-      } catch (error) {
-        console.error(
-          "ERRO AO CARREGAR ALUNOS:",
-          error
-        );
+        // Marca os que estão no banco como presentes
+        (presencasData || []).forEach(p => {
+          if (freqInicial[p.aluno_id]) {
+            freqInicial[p.aluno_id] = { presente: true, presencaIdNoBanco: p.id };
+          }
+        });
 
-        setErro(
-          error instanceof Error
-            ? error.message
-            : "Erro inesperado ao carregar os alunos."
-        );
+        setFrequencia(freqInicial);
 
+      } catch (err: any) {
+        console.error(err);
+        setErro("Erro ao carregar os dados da turma: " + err.message);
         setAlunos([]);
       } finally {
         setIsLoadingAlunos(false);
       }
     };
 
-    carregarAlunos();
-  }, [turmaId]);
+    carregarTurmaAtual();
+  }, [turmaSelecionadaId, dataSelecionada]);
 
-  /*
-   * ============================================================
-   * MARCAR / DESMARCAR ALUNO
-   * ============================================================
-   */
-  const alternarPresenca = (alunoId: string) => {
-    setPresentes((atual) => {
-      const novo = new Set(atual);
+  // Ações de Presença
+  const togglePresenca = (alunoId: string) => {
+    setFrequencia(prev => {
+      const atual = prev[alunoId];
+      if (!atual) return prev;
+      return {
+        ...prev,
+        [alunoId]: { ...atual, presente: !atual.presente }
+      };
+    });
+    setSucesso("");
+  };
 
-      if (novo.has(alunoId)) {
-        novo.delete(alunoId);
-      } else {
-        novo.add(alunoId);
-      }
-
+  const marcarTodos = (presente: boolean) => {
+    setFrequencia(prev => {
+      const novo = { ...prev };
+      Object.keys(novo).forEach(id => {
+        novo[id] = { ...novo[id], presente };
+      });
       return novo;
     });
-
-    setMensagem("");
-    setErro("");
+    setSucesso("");
   };
 
-  /*
-   * ============================================================
-   * MARCAR TODOS
-   * ============================================================
-   */
-  const marcarTodos = () => {
-    setPresentes(new Set(alunos.map((aluno) => aluno.id)));
-    setMensagem("");
-    setErro("");
+  // Obter operador logado
+  const getOperadorId = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email) throw new Error("Usuário não autenticado.");
+
+    const { data: op, error: opError } = await supabase.from("operadores").select("id").eq("email", user.email).maybeSingle();
+    if (opError) throw new Error("Erro ao buscar operador: " + opError.message);
+    if (!op) throw new Error(`Seu email (${user.email}) não está cadastrado na tabela de operadores. Cadastre-se lá para poder salvar chamadas.`);
+    return op.id;
   };
 
-  /*
-   * ============================================================
-   * LIMPAR TODOS
-   * ============================================================
-   */
-  const limparTodos = () => {
-    setPresentes(new Set());
-    setMensagem("");
-    setErro("");
-  };
-
-  /*
-   * ============================================================
-   * PEGAR OPERADOR LOGADO
-   * ============================================================
-   */
-  const buscarOperadorLogado = async () => {
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      throw new Error(
-        `Erro ao verificar usuário: ${userError.message}`
-      );
-    }
-
-    if (!user) {
-      throw new Error(
-        "Usuário não está autenticado."
-      );
-    }
-
-    if (!user.email) {
-      throw new Error(
-        "O usuário autenticado não possui e-mail."
-      );
-    }
-
-    const {
-      data: operador,
-      error: operadorError,
-    } = await supabase
-      .from("operadores")
-      .select("id")
-      .eq("email", user.email)
-      .maybeSingle();
-
-    if (operadorError) {
-      throw new Error(
-        `Erro ao localizar operador: ${operadorError.message}`
-      );
-    }
-
-    if (!operador) {
-      throw new Error(
-        "Seu usuário está autenticado, mas não existe um operador cadastrado com este e-mail."
-      );
-    }
-
-    return operador.id;
-  };
-
-  /*
-   * ============================================================
-   * SALVAR CHAMADA
-   * ============================================================
-   */
-  const salvarChamada = async () => {
-    if (!turmaSelecionada) {
-      setErro("Selecione uma turma.");
-      return;
-    }
-
-    if (alunos.length === 0) {
-      setErro(
-        "Não existem alunos para registrar nesta turma."
-      );
-      return;
-    }
-
-    if (presentes.size === 0) {
-      const confirmar = window.confirm(
-        "Nenhum aluno foi marcado como presente. Deseja realmente salvar a chamada?"
-      );
-
-      if (!confirmar) {
-        return;
-      }
-    }
-
+  // Salvar
+  const handleSalvar = async () => {
+    if (!turmaSelecionadaId || alunos.length === 0) return;
+    
     setIsSaving(true);
     setErro("");
-    setMensagem("");
+    setSucesso("");
 
     try {
-      const operadorId =
-        await buscarOperadorLogado();
+      const operadorId = await getOperadorId();
+      
+      const insercoes: any[] = [];
+      const exclusoes: string[] = []; // IDs de presença para deletar
 
-      /*
-       * Busca novamente as presenças de hoje.
-       * Isso evita inserir presença duplicada.
-       */
-      const inicioDoDia = new Date();
-      inicioDoDia.setHours(0, 0, 0, 0);
+      // O horário que vai pro banco é meio-dia da data selecionada, apenas para registro padrão do dia
+      const dataHoraRegistro = `${dataSelecionada}T12:00:00.000Z`;
 
-      const fimDoDia = new Date();
-      fimDoDia.setHours(23, 59, 59, 999);
+      Object.entries(frequencia).forEach(([alunoId, state]) => {
+        // Se está presente na tela, mas NÃO existia no banco -> INSERIR
+        if (state.presente && !state.presencaIdNoBanco) {
+          insercoes.push({
+            aluno_id: alunoId,
+            curso_id: turmaSelecionada?.curso_id,
+            turma_id: turmaSelecionadaId,
+            operador_id: operadorId,
+            metodo: "manual",
+            data_hora: dataHoraRegistro
+          });
+        }
+        // Se está ausente na tela, mas EXISTIA no banco -> DELETAR
+        else if (!state.presente && state.presencaIdNoBanco) {
+          exclusoes.push(state.presencaIdNoBanco);
+        }
+      });
 
-      const {
-        data: presencasExistentes,
-        error: presencasExistentesError,
-      } = await supabase
-        .from("presencas")
-        .select("aluno_id")
-        .eq("turma_id", turmaSelecionada.id)
-        .gte(
-          "data_hora",
-          inicioDoDia.toISOString()
-        )
-        .lte(
-          "data_hora",
-          fimDoDia.toISOString()
-        );
-
-      if (presencasExistentesError) {
-        throw new Error(
-          `Erro ao verificar presenças existentes: ${presencasExistentesError.message}`
-        );
-      }
-
-      const idsJaRegistrados = new Set(
-        (presencasExistentes || []).map(
-          (presenca) => presenca.aluno_id
-        )
-      );
-
-      /*
-       * Só inserimos quem ainda não possui presença hoje.
-       */
-      const presentesArray = Array.from(
-        presentes
-      ).filter(
-        (alunoId) =>
-          !idsJaRegistrados.has(alunoId)
-      );
-
-      if (presentesArray.length === 0) {
-        setMensagem(
-          "A chamada desta turma já foi registrada hoje."
-        );
-
+      if (insercoes.length === 0 && exclusoes.length === 0) {
+        setSucesso("Nenhuma alteração de frequência detectada para salvar.");
+        setIsSaving(false);
         return;
       }
 
-      const agora = new Date().toISOString();
-
-      const registros = presentesArray.map(
-        (alunoId) => ({
-          aluno_id: alunoId,
-          curso_id: turmaSelecionada.curso_id,
-          turma_id: turmaSelecionada.id,
-          operador_id: operadorId,
-          metodo: "manual",
-          data_hora: agora,
-        })
-      );
-
-      console.log(
-        "REGISTROS DE PRESENÇA:",
-        registros
-      );
-
-      const {
-        error: insertError,
-      } = await supabase
-        .from("presencas")
-        .insert(registros);
-
-      if (insertError) {
-        throw new Error(
-          `Erro ao salvar presença: ${insertError.message}`
-        );
+      // Executar exclusões
+      if (exclusoes.length > 0) {
+        const { error: delErr } = await supabase.from("presencas").delete().in("id", exclusoes);
+        if (delErr) throw delErr;
       }
 
-      setMensagem(
-        `${presentesArray.length} presença(s) registrada(s) com sucesso!`
-      );
+      // Executar inserções
+      if (insercoes.length > 0) {
+        const { error: insErr } = await supabase.from("presencas").insert(insercoes);
+        if (insErr) throw insErr;
+      }
 
-      /*
-       * Atualiza a lista mantendo os presentes selecionados.
-       */
-      const idsAtualizados = new Set(
-        Array.from(presentes)
-      );
+      setSucesso("Frequência salva com sucesso no banco de dados!");
 
-      setPresentes(idsAtualizados);
-    } catch (error) {
-      console.error(
-        "ERRO AO SALVAR CHAMADA:",
-        error
-      );
+      // Força a recarga para pegar os novos IDs gerados no banco
+      setTurmaSelecionadaId(""); 
+      setTimeout(() => setTurmaSelecionadaId(turmaSelecionada?.id || ""), 100);
 
-      setErro(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível salvar a chamada."
-      );
+    } catch (err: any) {
+      console.error(err);
+      setErro("Falha ao salvar a chamada: " + err.message);
     } finally {
       setIsSaving(false);
     }
   };
 
-  /*
-   * ============================================================
-   * RENDER
-   * ============================================================
-   */
+  // Filtro de alunos
+  const alunosFiltrados = useMemo(() => {
+    if (!searchTerm) return alunos;
+    return alunos.filter(a => a.nome_completo.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [alunos, searchTerm]);
+
+  const qtdPresentes = Object.values(frequencia).filter(f => f.presente).length;
 
   return (
-    <div className="w-full">
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-        {/* CABEÇALHO */}
-        <div className="p-6 border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Users className="w-5 h-5 text-blue-600" />
+    <div className="w-full max-w-5xl mx-auto flex flex-col gap-6">
+      
+      {/* HEADER */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <UserCheck className="w-6 h-6 text-blue-600" />
             </div>
-
             <div>
-              <h2 className="text-xl font-bold text-slate-900">
-                Chamada
-              </h2>
-
-              <p className="text-sm text-slate-500">
-                Selecione a turma e marque os alunos presentes.
-              </p>
+              <h1 className="text-2xl font-bold text-slate-900">Diário de Classe</h1>
+              <p className="text-sm text-slate-500 mt-1">Realize a chamada e controle a frequência dos alunos.</p>
+            </div>
+          </div>
+          
+          {/* Seletor de Data Global */}
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Data da Chamada</label>
+            <div className="relative">
+              <CalendarIcon className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input 
+                type="date"
+                value={dataSelecionada}
+                onChange={(e) => setDataSelecionada(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
           </div>
         </div>
+      </div>
 
-        {/* CONTEÚDO */}
-        <div className="p-6 space-y-6">
-          {/* MENSAGEM DE ERRO */}
-          {erro && (
-            <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700">
-              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+      {/* ALERTAS */}
+      {erro && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 animate-in fade-in slide-in-from-top-2">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <p className="font-medium text-sm">{erro}</p>
+        </div>
+      )}
+      {sucesso && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 animate-in fade-in slide-in-from-top-2">
+          <Check className="w-5 h-5 shrink-0 mt-0.5" />
+          <p className="font-medium text-sm">{sucesso}</p>
+        </div>
+      )}
 
-              <div className="flex-1">
-                <p className="font-medium">
-                  {erro}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* MENSAGEM DE SUCESSO */}
-          {mensagem && (
-            <div className="flex items-start gap-3 p-4 rounded-lg bg-green-50 border border-green-200 text-green-700">
-              <Check className="w-5 h-5 mt-0.5 flex-shrink-0" />
-
-              <p className="font-medium">
-                {mensagem}
-              </p>
-            </div>
-          )}
-
-          {/* SELEÇÃO DA TURMA */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-semibold text-slate-700">
-                Turma
-              </label>
-
-              <button
-                type="button"
-                onClick={carregarTurmas}
-                disabled={isLoadingTurmas}
-                className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 ${
-                    isLoadingTurmas
-                      ? "animate-spin"
-                      : ""
-                  }`}
-                />
-
-                Atualizar
-              </button>
-            </div>
-
-            <select
-              value={turmaId}
-              onChange={(e) => {
-                setTurmaId(e.target.value);
-                setErro("");
-                setMensagem("");
-              }}
-              disabled={isLoadingTurmas}
-              className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
-            >
-              <option value="">
-                {isLoadingTurmas
-                  ? "Carregando turmas..."
-                  : turmas.length === 0
-                  ? "Nenhuma turma encontrada"
-                  : "Selecione uma turma"}
-              </option>
-
-              {turmas.map((turma) => (
-                <option
-                  key={turma.id}
-                  value={turma.id}
-                >
-                  {turma.nome}
-                  {turma.turno
-                    ? ` — ${turma.turno}`
-                    : ""}
-                  {turma.horario
-                    ? ` — ${turma.horario}`
-                    : ""}
+      {/* FILTROS E SELEÇÃO */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <label className="block text-sm font-semibold text-slate-700 mb-3">Selecione a Turma</label>
+        {isLoadingInitial ? (
+          <div className="flex items-center gap-2 text-slate-500 text-sm p-3">
+            <Loader2 className="w-5 h-5 animate-spin" /> Carregando turmas...
+          </div>
+        ) : (
+          <select
+            value={turmaSelecionadaId}
+            onChange={(e) => setTurmaSelecionadaId(e.target.value)}
+            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Selecione uma turma para realizar a chamada...</option>
+            {turmas.map(t => {
+              const c = cursos.find(curso => curso.id === t.curso_id);
+              return (
+                <option key={t.id} value={t.id}>
+                  {c?.titulo ? `${c.titulo} - ` : ""}{t.nome} 
+                  {t.horario ? ` (${t.horario})` : ""} 
+                  {t.dias_semana && t.dias_semana.length > 0 ? ` [${t.dias_semana.join(", ")}]` : ""}
                 </option>
-              ))}
-            </select>
+              )
+            })}
+          </select>
+        )}
+      </div>
 
-            {turmaSelecionada && (
-              <div className="mt-2 text-sm text-slate-500">
-                <span className="font-medium">
-                  Horário:
-                </span>{" "}
-                {turmaSelecionada.horario ||
-                  "Não informado"}
+      {/* LISTA DE ALUNOS */}
+      {turmaSelecionadaId && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col flex-1">
+          
+          <div className="p-6 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <h2 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-slate-400" /> Alunos Matriculados
+              </h2>
+              {alunos.length > 0 && (
+                <div className="mt-2 flex items-center gap-4">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200">
+                    Total: {alunos.length}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold border border-emerald-200">
+                    Presentes: {qtdPresentes}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold border border-red-200">
+                    Faltas: {alunos.length - qtdPresentes}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 w-full md:w-auto">
+              {alunos.length > 0 && (
+                <>
+                  <button onClick={() => marcarTodos(true)} className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-medium text-sm rounded-lg transition-colors flex items-center gap-2">
+                    <Check className="w-4 h-4"/> Presentes
+                  </button>
+                  <button onClick={() => marcarTodos(false)} className="px-4 py-2 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 font-medium text-sm rounded-lg transition-colors flex items-center gap-2">
+                    <X className="w-4 h-4"/> Faltas
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="p-6">
+            {isLoadingAlunos ? (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin mb-4" />
+                <p>Buscando lista de alunos e histórico do dia...</p>
+              </div>
+            ) : alunos.length === 0 ? (
+              <div className="text-center py-16 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                <UserX className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <h3 className="text-lg font-bold text-slate-700">Turma Vazia</h3>
+                <p className="text-slate-500 text-sm mt-1 max-w-md mx-auto">Esta turma não possui alunos matriculados no momento. Realize matrículas primeiro para fazer a chamada.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                
+                {/* Search Bar */}
+                <div className="relative mb-6">
+                  <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Buscar aluno na lista..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                {alunosFiltrados.length === 0 ? (
+                  <p className="text-center text-slate-500 py-4">Nenhum aluno encontrado na busca.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {alunosFiltrados.map((aluno) => {
+                      const state = frequencia[aluno.id];
+                      const presente = state?.presente || false;
+                      const hasSavedDbState = state?.presencaIdNoBanco !== null; // Se já estava salvo no banco
+
+                      return (
+                        <div 
+                          key={aluno.id}
+                          onClick={() => togglePresenca(aluno.id)}
+                          className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                            presente 
+                              ? 'bg-emerald-50 border-emerald-500 shadow-sm' 
+                              : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold text-sm transition-colors ${
+                              presente ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-600'
+                            }`}>
+                              {aluno.nome_completo.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 text-sm truncate" title={aluno.nome_completo}>
+                                {aluno.nome_completo}
+                              </p>
+                              <p className={`text-xs font-medium mt-0.5 ${presente ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                {presente ? 'Presente' : 'Falta'}
+                                {hasSavedDbState && presente && <span className="ml-1 text-[10px] opacity-70">(Salvo)</span>}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="shrink-0 ml-2">
+                            <div className={`w-6 h-6 rounded-md flex items-center justify-center border-2 transition-colors ${
+                              presente ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'
+                            }`}>
+                              {presente && <Check className="w-4 h-4 text-white" />}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* ALUNOS */}
-          {turmaId && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">
-                    Alunos da turma
-                  </h3>
-
-                  <p className="text-sm text-slate-500">
-                    {alunos.length} aluno(s) •{" "}
-                    {presentes.size} presente(s)
-                  </p>
-                </div>
-
-                {alunos.length > 0 && (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={marcarTodos}
-                      className="px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
-                    >
-                      Marcar todos
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={limparTodos}
-                      className="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"
-                    >
-                      Limpar
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {isLoadingAlunos ? (
-                <div className="flex items-center justify-center py-12 text-slate-500">
-                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
-
-                  Carregando alunos...
-                </div>
-              ) : alunos.length === 0 ? (
-                <div className="py-10 text-center border border-dashed border-slate-300 rounded-lg">
-                  <Users className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-
-                  <p className="font-medium text-slate-700">
-                    Nenhum aluno encontrado
-                  </p>
-
-                  <p className="text-sm text-slate-500 mt-1 px-4">
-                    Verifique se existem matrículas com o
-                    campo <strong>turma_id</strong> preenchido
-                    para esta turma.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {alunos.map((aluno) => {
-                    const presente =
-                      presentes.has(aluno.id);
-
-                    return (
-                      <button
-                        key={aluno.id}
-                        type="button"
-                        onClick={() =>
-                          alternarPresenca(
-                            aluno.id
-                          )
-                        }
-                        className={`w-full flex items-center justify-between p-4 rounded-lg border transition ${
-                          presente
-                            ? "bg-green-50 border-green-300"
-                            : "bg-white border-slate-200 hover:bg-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                              presente
-                                ? "bg-green-600 text-white"
-                                : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            {aluno.nome_completo
-                              .charAt(0)
-                              .toUpperCase()}
-                          </div>
-
-                          <div className="text-left">
-                            <p className="font-medium text-slate-900">
-                              {aluno.nome_completo}
-                            </p>
-
-                            <p className="text-xs text-slate-500">
-                              {presente
-                                ? "Presente"
-                                : "Não marcado"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div
-                          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${
-                            presente
-                              ? "bg-green-600 border-green-600"
-                              : "border-slate-300"
-                          }`}
-                        >
-                          {presente && (
-                            <Check className="w-4 h-4 text-white" />
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* BOTÃO SALVAR */}
-              {alunos.length > 0 && (
-                <div className="mt-6 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={salvarChamada}
-                    disabled={isSaving}
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSaving ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        Salvando...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-5 h-5" />
-                        Salvar chamada
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
+          {/* RODAPÉ E BOTÃO DE SALVAR */}
+          {alunos.length > 0 && (
+            <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={handleSalvar}
+                disabled={isSaving}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow"
+              >
+                {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                {isSaving ? "Salvando..." : "Salvar Presenças"}
+              </button>
             </div>
           )}
+
         </div>
-      </div>
+      )}
+
     </div>
   );
 }
