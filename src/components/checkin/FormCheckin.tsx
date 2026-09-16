@@ -2,24 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  BookOpen,
   Check,
-  CheckCircle2,
-  Clock3,
   Loader2,
-  Search,
-  Save,
-  Sun,
-  Sunset,
   Users,
-  X,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-
-type Curso = {
-  id: string;
-  titulo: string;
-};
 
 type Turma = {
   id: string;
@@ -27,9 +16,6 @@ type Turma = {
   curso_id: string;
   turno: string | null;
   horario: string | null;
-  cursos?: {
-    titulo: string;
-  }[] | null;
 };
 
 type Aluno = {
@@ -37,231 +23,147 @@ type Aluno = {
   nome_completo: string;
 };
 
-type Horario = {
+type Presenca = {
   id: string;
-  inicio: string;
-  fim: string;
-  label: string;
-  periodo: "Manhã" | "Tarde";
+  aluno_id: string;
 };
 
-const HORARIOS: Horario[] = [
-  {
-    id: "08:30-10:00",
-    inicio: "08:30",
-    fim: "10:00",
-    label: "08:30 – 10:00",
-    periodo: "Manhã",
-  },
-  {
-    id: "10:00-11:30",
-    inicio: "10:00",
-    fim: "11:30",
-    label: "10:00 – 11:30",
-    periodo: "Manhã",
-  },
-  {
-    id: "14:30-16:00",
-    inicio: "14:30",
-    fim: "16:00",
-    label: "14:30 – 16:00",
-    periodo: "Tarde",
-  },
-  {
-    id: "16:00-17:30",
-    inicio: "16:00",
-    fim: "17:30",
-    label: "16:00 – 17:30",
-    periodo: "Tarde",
-  },
-];
-
-function getHorarioId(value: string | null | undefined): string | null {
-  if (!value) return null;
-
-  const texto = String(value);
-
-  // Caso esteja salvo simplesmente como "08:30"
-  const horarioSimples = texto.match(/^(\d{2}):(\d{2})/);
-
-  if (horarioSimples) {
-    const hora = `${horarioSimples[1]}:${horarioSimples[2]}`;
-
-    const encontrado = HORARIOS.find(
-      (item) => item.inicio === hora
-    );
-
-    if (encontrado) {
-      return encontrado.id;
-    }
-  }
-
-  // Caso esteja salvo como timestamp ISO
-  const date = new Date(texto);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  try {
-    const formatter = new Intl.DateTimeFormat("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-
-    const partes = formatter.formatToParts(date);
-
-    const hora = partes.find(
-      (parte) => parte.type === "hour"
-    )?.value;
-
-    const minuto = partes.find(
-      (parte) => parte.type === "minute"
-    )?.value;
-
-    if (!hora || !minuto) {
-      return null;
-    }
-
-    const horario = `${hora}:${minuto}`;
-
-    const encontrado = HORARIOS.find(
-      (item) => item.inicio === horario
-    );
-
-    return encontrado?.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export default function FormCheckin() {
-  const [cursos, setCursos] = useState<Curso[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
-
-  const [cursoId, setCursoId] = useState("");
-  const [horarioId, setHorarioId] = useState("");
   const [turmaId, setTurmaId] = useState("");
 
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [presencas, setPresencas] = useState<Set<string>>(
-    new Set()
+  const [presentes, setPresentes] = useState<Set<string>>(new Set());
+
+  const [isLoadingTurmas, setIsLoadingTurmas] = useState(true);
+  const [isLoadingAlunos, setIsLoadingAlunos] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [erro, setErro] = useState("");
+  const [mensagem, setMensagem] = useState("");
+
+  const turmaSelecionada = useMemo(
+    () => turmas.find((turma) => turma.id === turmaId),
+    [turmas, turmaId]
   );
 
-  const [pesquisa, setPesquisa] = useState("");
+  /*
+   * ============================================================
+   * CARREGAR TURMAS
+   * ============================================================
+   *
+   * IMPORTANTE:
+   * Não usamos cursos(titulo) aqui.
+   * A consulta é direta na tabela turmas.
+   */
+  const carregarTurmas = async () => {
+    setIsLoadingTurmas(true);
+    setErro("");
+    setMensagem("");
 
-  const [carregando, setCarregando] = useState(true);
-  const [carregandoAlunos, setCarregandoAlunos] =
-    useState(false);
+    try {
+      // Verifica se existe usuário autenticado
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-  const [salvando, setSalvando] = useState(false);
+      if (authError) {
+        console.error("ERRO AO VERIFICAR USUÁRIO:", authError);
+      }
 
-  const [mensagem, setMensagem] = useState("");
-  const [erro, setErro] = useState("");
-
-  // =========================================================
-  // CARREGAR CURSOS E TURMAS
-  // =========================================================
-
-  useEffect(() => {
-    async function carregarDados() {
-      try {
-        setCarregando(true);
-        setErro("");
-
-        const [cursosResponse, turmasResponse] =
-          await Promise.all([
-            supabase
-              .from("cursos")
-              .select("id, titulo")
-              .order("titulo", {
-                ascending: true,
-              }),
-
-            supabase
-              .from("turmas")
-              .select(
-                "id, nome, curso_id, turno, horario, cursos(titulo)"
-              )
-              .order("nome", {
-                ascending: true,
-              }),
-          ]);
-
-        if (cursosResponse.error) {
-          throw new Error(
-            cursosResponse.error.message
-          );
-        }
-
-        if (turmasResponse.error) {
-          throw new Error(
-            turmasResponse.error.message
-          );
-        }
-
-        setCursos(
-          (cursosResponse.data || []) as Curso[]
+      if (!user) {
+        setErro(
+          "Usuário não está autenticado. Faça login novamente no sistema."
         );
+        setTurmas([]);
+        return;
+      }
 
-        setTurmas(
-          (turmasResponse.data || []) as Turma[]
-        );
-      } catch (error: any) {
-        console.error(error);
+      console.log("USUÁRIO AUTENTICADO:", user.id);
+
+      /*
+       * Consulta DIRETA em turmas.
+       * Não depende de relacionamento com cursos.
+       */
+      const { data, error } = await supabase
+        .from("turmas")
+        .select("id, nome, curso_id, turno, horario")
+        .order("nome", { ascending: true });
+
+      console.log("RESULTADO DA CONSULTA DE TURMAS:", data);
+      console.log("ERRO DA CONSULTA DE TURMAS:", error);
+
+      if (error) {
+        console.error("ERRO AO BUSCAR TURMAS:", error);
 
         setErro(
-          error?.message ||
-            "Não foi possível carregar os dados."
+          `Não foi possível carregar as turmas. ${error.message}`
         );
-      } finally {
-        setCarregando(false);
-      }
-    }
 
-    carregarDados();
+        setTurmas([]);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        console.warn(
+          "A CONSULTA FUNCIONOU, MAS NÃO RETORNOU NENHUMA TURMA."
+        );
+
+        setTurmas([]);
+
+        setErro(
+          "Nenhuma turma foi encontrada para este usuário."
+        );
+
+        return;
+      }
+
+      console.log("TURMAS ENCONTRADAS:", data);
+
+      setTurmas(data as Turma[]);
+    } catch (error) {
+      console.error("ERRO INESPERADO AO CARREGAR TURMAS:", error);
+
+      setTurmas([]);
+
+      setErro(
+        error instanceof Error
+          ? error.message
+          : "Erro inesperado ao carregar as turmas."
+      );
+    } finally {
+      setIsLoadingTurmas(false);
+    }
+  };
+
+  useEffect(() => {
+    carregarTurmas();
   }, []);
 
-  // =========================================================
-  // TURMAS FILTRADAS
-  // =========================================================
-
-  const turmasFiltradas = useMemo(() => {
-    if (!cursoId || !horarioId) {
-      return [];
-    }
-
-    return turmas.filter((turma) => {
-      const mesmaCurso =
-        turma.curso_id === cursoId;
-
-      const mesmoHorario =
-        getHorarioId(turma.horario) === horarioId;
-
-      return mesmaCurso && mesmoHorario;
-    });
-  }, [turmas, cursoId, horarioId]);
-
-  // =========================================================
-  // ALUNOS DA TURMA
-  // =========================================================
-
+  /*
+   * ============================================================
+   * CARREGAR ALUNOS DA TURMA
+   * ============================================================
+   */
   useEffect(() => {
     if (!turmaId) {
       setAlunos([]);
-      setPresencas(new Set());
+      setPresentes(new Set());
       return;
     }
 
-    async function carregarAlunos() {
-      try {
-        setCarregandoAlunos(true);
-        setErro("");
-        setMensagem("");
+    const carregarAlunos = async () => {
+      setIsLoadingAlunos(true);
+      setErro("");
+      setMensagem("");
+      setPresentes(new Set());
 
-        // Primeiro pegamos as matrículas da turma
+      try {
+        /*
+         * Primeiro buscamos as matrículas que pertencem
+         * à turma selecionada.
+         */
         const {
           data: matriculas,
           error: matriculasError,
@@ -270,144 +172,156 @@ export default function FormCheckin() {
           .select("aluno_id")
           .eq("turma_id", turmaId);
 
+        console.log(
+          "MATRÍCULAS DA TURMA:",
+          matriculas
+        );
+
         if (matriculasError) {
-          throw new Error(
-            matriculasError.message
-          );
-        }
-
-        const idsAlunos =
-          (matriculas || []).map(
-            (item) => item.aluno_id
+          console.error(
+            "ERRO AO BUSCAR MATRÍCULAS:",
+            matriculasError
           );
 
-        if (idsAlunos.length === 0) {
+          setErro(
+            `Não foi possível carregar os alunos da turma. ${matriculasError.message}`
+          );
+
           setAlunos([]);
-          setPresencas(new Set());
           return;
         }
 
-        // Depois buscamos os alunos
+        const alunoIds = Array.from(
+          new Set(
+            (matriculas || [])
+              .map((matricula) => matricula.aluno_id)
+              .filter(Boolean)
+          )
+        );
+
+        console.log("IDS DOS ALUNOS:", alunoIds);
+
+        if (alunoIds.length === 0) {
+          setAlunos([]);
+
+          setErro(
+            "Essa turma não possui alunos matriculados. Verifique se o campo turma_id das matrículas está preenchido."
+          );
+
+          return;
+        }
+
+        /*
+         * Agora buscamos os alunos.
+         */
         const {
           data: alunosData,
           error: alunosError,
         } = await supabase
           .from("alunos")
           .select("id, nome_completo")
-          .in("id", idsAlunos)
+          .in("id", alunoIds)
           .order("nome_completo", {
             ascending: true,
           });
 
-        if (alunosError) {
-          throw new Error(
-            alunosError.message
-          );
-        }
-
-        setAlunos(
-          (alunosData || []) as Aluno[]
+        console.log(
+          "ALUNOS ENCONTRADOS:",
+          alunosData
         );
 
-        // =====================================================
-        // BUSCAR PRESENÇAS DE HOJE
-        // =====================================================
+        if (alunosError) {
+          console.error(
+            "ERRO AO BUSCAR ALUNOS:",
+            alunosError
+          );
 
-        const agora = new Date();
+          setErro(
+            `Não foi possível carregar os alunos. ${alunosError.message}`
+          );
 
-        const inicioHoje = new Date(agora);
-        inicioHoje.setHours(0, 0, 0, 0);
+          setAlunos([]);
+          return;
+        }
 
-        const fimHoje = new Date(agora);
-        fimHoje.setHours(23, 59, 59, 999);
+        setAlunos((alunosData || []) as Aluno[]);
+
+        /*
+         * ========================================================
+         * VERIFICAR PRESENÇAS JÁ REGISTRADAS HOJE
+         * ========================================================
+         */
+
+        const inicioDoDia = new Date();
+        inicioDoDia.setHours(0, 0, 0, 0);
+
+        const fimDoDia = new Date();
+        fimDoDia.setHours(23, 59, 59, 999);
 
         const {
           data: presencasData,
           error: presencasError,
         } = await supabase
           .from("presencas")
-          .select("aluno_id")
+          .select("id, aluno_id")
           .eq("turma_id", turmaId)
           .gte(
             "data_hora",
-            inicioHoje.toISOString()
+            inicioDoDia.toISOString()
           )
           .lte(
             "data_hora",
-            fimHoje.toISOString()
+            fimDoDia.toISOString()
           );
 
         if (presencasError) {
-          throw new Error(
-            presencasError.message
+          console.error(
+            "ERRO AO BUSCAR PRESENÇAS:",
+            presencasError
           );
+
+          /*
+           * Não impedimos o usuário de fazer a chamada
+           * se a consulta de presenças falhar.
+           */
+          setPresentes(new Set());
+        } else {
+          const idsPresentes = new Set(
+            ((presencasData || []) as Presenca[]).map(
+              (presenca) => presenca.aluno_id
+            )
+          );
+
+          setPresentes(idsPresentes);
         }
-
-        const idsPresentes = new Set<string>(
-          (presencasData || []).map(
-            (item) => item.aluno_id
-          )
+      } catch (error) {
+        console.error(
+          "ERRO AO CARREGAR ALUNOS:",
+          error
         );
-
-        setPresencas(idsPresentes);
-      } catch (error: any) {
-        console.error(error);
 
         setErro(
-          error?.message ||
-            "Não foi possível carregar os alunos."
+          error instanceof Error
+            ? error.message
+            : "Erro inesperado ao carregar os alunos."
         );
+
+        setAlunos([]);
       } finally {
-        setCarregandoAlunos(false);
+        setIsLoadingAlunos(false);
       }
-    }
+    };
 
     carregarAlunos();
   }, [turmaId]);
 
-  // =========================================================
-  // SELECIONAR CURSO
-  // =========================================================
-
-  function selecionarCurso(id: string) {
-    setCursoId(id);
-    setHorarioId("");
-    setTurmaId("");
-    setAlunos([]);
-    setPresencas(new Set());
-    setMensagem("");
-    setErro("");
-  }
-
-  // =========================================================
-  // SELECIONAR HORÁRIO
-  // =========================================================
-
-  function selecionarHorario(id: string) {
-    setHorarioId(id);
-    setTurmaId("");
-    setAlunos([]);
-    setPresencas(new Set());
-    setMensagem("");
-    setErro("");
-  }
-
-  // =========================================================
-  // SELECIONAR TURMA
-  // =========================================================
-
-  function selecionarTurma(id: string) {
-    setTurmaId(id);
-    setMensagem("");
-    setErro("");
-  }
-
-  // =========================================================
-  // MARCAR / DESMARCAR ALUNO
-  // =========================================================
-
-  function alternarPresenca(alunoId: string) {
-    setPresencas((atual) => {
+  /*
+   * ============================================================
+   * MARCAR / DESMARCAR ALUNO
+   * ============================================================
+   */
+  const alternarPresenca = (alunoId: string) => {
+    setPresentes((atual) => {
       const novo = new Set(atual);
 
       if (novo.has(alunoId)) {
@@ -418,849 +332,506 @@ export default function FormCheckin() {
 
       return novo;
     });
-  }
 
-  // =========================================================
-  // MARCAR TODOS
-  // =========================================================
+    setMensagem("");
+    setErro("");
+  };
 
-  function marcarTodos() {
-    setPresencas(
-      new Set(alunos.map((aluno) => aluno.id))
-    );
-  }
+  /*
+   * ============================================================
+   * MARCAR TODOS
+   * ============================================================
+   */
+  const marcarTodos = () => {
+    setPresentes(new Set(alunos.map((aluno) => aluno.id)));
+    setMensagem("");
+    setErro("");
+  };
 
-  // =========================================================
-  // LIMPAR TODOS
-  // =========================================================
+  /*
+   * ============================================================
+   * LIMPAR TODOS
+   * ============================================================
+   */
+  const limparTodos = () => {
+    setPresentes(new Set());
+    setMensagem("");
+    setErro("");
+  };
 
-  function limparTodos() {
-    setPresencas(new Set());
-  }
+  /*
+   * ============================================================
+   * PEGAR OPERADOR LOGADO
+   * ============================================================
+   */
+  const buscarOperadorLogado = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-  // =========================================================
-  // SALVAR CHAMADA
-  // =========================================================
+    if (userError) {
+      throw new Error(
+        `Erro ao verificar usuário: ${userError.message}`
+      );
+    }
 
-  async function salvarChamada() {
-    if (!turmaId) {
+    if (!user) {
+      throw new Error(
+        "Usuário não está autenticado."
+      );
+    }
+
+    if (!user.email) {
+      throw new Error(
+        "O usuário autenticado não possui e-mail."
+      );
+    }
+
+    const {
+      data: operador,
+      error: operadorError,
+    } = await supabase
+      .from("operadores")
+      .select("id")
+      .eq("email", user.email)
+      .maybeSingle();
+
+    if (operadorError) {
+      throw new Error(
+        `Erro ao localizar operador: ${operadorError.message}`
+      );
+    }
+
+    if (!operador) {
+      throw new Error(
+        "Seu usuário está autenticado, mas não existe um operador cadastrado com este e-mail."
+      );
+    }
+
+    return operador.id;
+  };
+
+  /*
+   * ============================================================
+   * SALVAR CHAMADA
+   * ============================================================
+   */
+  const salvarChamada = async () => {
+    if (!turmaSelecionada) {
       setErro("Selecione uma turma.");
       return;
     }
 
     if (alunos.length === 0) {
       setErro(
-        "Essa turma não possui alunos matriculados."
+        "Não existem alunos para registrar nesta turma."
       );
       return;
     }
 
+    if (presentes.size === 0) {
+      const confirmar = window.confirm(
+        "Nenhum aluno foi marcado como presente. Deseja realmente salvar a chamada?"
+      );
+
+      if (!confirmar) {
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    setErro("");
+    setMensagem("");
+
     try {
-      setSalvando(true);
-      setErro("");
-      setMensagem("");
+      const operadorId =
+        await buscarOperadorLogado();
 
-      // =====================================================
-      // PEGAR USUÁRIO LOGADO
-      // =====================================================
+      /*
+       * Busca novamente as presenças de hoje.
+       * Isso evita inserir presença duplicada.
+       */
+      const inicioDoDia = new Date();
+      inicioDoDia.setHours(0, 0, 0, 0);
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        throw new Error(
-          "Usuário não está logado."
-        );
-      }
-
-      if (!user.email) {
-        throw new Error(
-          "O usuário logado não possui e-mail."
-        );
-      }
-
-      // =====================================================
-      // PEGAR OPERADOR
-      // =====================================================
+      const fimDoDia = new Date();
+      fimDoDia.setHours(23, 59, 59, 999);
 
       const {
-        data: operador,
-        error: operadorError,
-      } = await supabase
-        .from("operadores")
-        .select("id")
-        .eq("email", user.email)
-        .maybeSingle();
-
-      if (operadorError) {
-        throw new Error(
-          operadorError.message
-        );
-      }
-
-      if (!operador) {
-        throw new Error(
-          "Operador não encontrado."
-        );
-      }
-
-      // =====================================================
-      // DATA DE HOJE
-      // =====================================================
-
-      const agora = new Date();
-
-      const inicioHoje = new Date(agora);
-      inicioHoje.setHours(0, 0, 0, 0);
-
-      const fimHoje = new Date(agora);
-      fimHoje.setHours(23, 59, 59, 999);
-
-      // =====================================================
-      // APAGAR A CHAMADA DE HOJE DA TURMA
-      // =====================================================
-
-      const {
-        error: deleteError,
+        data: presencasExistentes,
+        error: presencasExistentesError,
       } = await supabase
         .from("presencas")
-        .delete()
-        .eq("turma_id", turmaId)
+        .select("aluno_id")
+        .eq("turma_id", turmaSelecionada.id)
         .gte(
           "data_hora",
-          inicioHoje.toISOString()
+          inicioDoDia.toISOString()
         )
         .lte(
           "data_hora",
-          fimHoje.toISOString()
+          fimDoDia.toISOString()
         );
 
-      if (deleteError) {
+      if (presencasExistentesError) {
         throw new Error(
-          deleteError.message
+          `Erro ao verificar presenças existentes: ${presencasExistentesError.message}`
         );
       }
 
-      // =====================================================
-      // CRIAR NOVAS PRESENÇAS
-      // =====================================================
-
-      const alunosPresentes = alunos.filter(
-        (aluno) =>
-          presencas.has(aluno.id)
+      const idsJaRegistrados = new Set(
+        (presencasExistentes || []).map(
+          (presenca) => presenca.aluno_id
+        )
       );
 
-      if (alunosPresentes.length > 0) {
-        const registros = alunosPresentes.map(
-          (aluno) => ({
-            aluno_id: aluno.id,
-            curso_id: cursoId,
-            turma_id: turmaId,
-            operador_id: operador.id,
-            metodo: "manual",
-            data_hora:
-              agora.toISOString(),
-          })
+      /*
+       * Só inserimos quem ainda não possui presença hoje.
+       */
+      const presentesArray = Array.from(
+        presentes
+      ).filter(
+        (alunoId) =>
+          !idsJaRegistrados.has(alunoId)
+      );
+
+      if (presentesArray.length === 0) {
+        setMensagem(
+          "A chamada desta turma já foi registrada hoje."
         );
 
-        const {
-          error: insertError,
-        } = await supabase
-          .from("presencas")
-          .insert(registros);
+        return;
+      }
 
-        if (insertError) {
-          throw new Error(
-            insertError.message
-          );
-        }
+      const agora = new Date().toISOString();
+
+      const registros = presentesArray.map(
+        (alunoId) => ({
+          aluno_id: alunoId,
+          curso_id: turmaSelecionada.curso_id,
+          turma_id: turmaSelecionada.id,
+          operador_id: operadorId,
+          metodo: "manual",
+          data_hora: agora,
+        })
+      );
+
+      console.log(
+        "REGISTROS DE PRESENÇA:",
+        registros
+      );
+
+      const {
+        error: insertError,
+      } = await supabase
+        .from("presencas")
+        .insert(registros);
+
+      if (insertError) {
+        throw new Error(
+          `Erro ao salvar presença: ${insertError.message}`
+        );
       }
 
       setMensagem(
-        `Chamada salva com sucesso. ${alunosPresentes.length} aluno(s) presente(s).`
+        `${presentesArray.length} presença(s) registrada(s) com sucesso!`
       );
-    } catch (error: any) {
-      console.error(error);
+
+      /*
+       * Atualiza a lista mantendo os presentes selecionados.
+       */
+      const idsAtualizados = new Set(
+        Array.from(presentes)
+      );
+
+      setPresentes(idsAtualizados);
+    } catch (error) {
+      console.error(
+        "ERRO AO SALVAR CHAMADA:",
+        error
+      );
 
       setErro(
-        error?.message ||
-          "Não foi possível salvar a chamada."
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar a chamada."
       );
     } finally {
-      setSalvando(false);
+      setIsSaving(false);
     }
-  }
+  };
 
-  // =========================================================
-  // PESQUISA
-  // =========================================================
-
-  const alunosFiltrados = useMemo(() => {
-    const texto = pesquisa
-      .trim()
-      .toLowerCase();
-
-    if (!texto) {
-      return alunos;
-    }
-
-    return alunos.filter((aluno) =>
-      aluno.nome_completo
-        .toLowerCase()
-        .includes(texto)
-    );
-  }, [alunos, pesquisa]);
-
-  const turmaSelecionada = turmas.find(
-    (turma) => turma.id === turmaId
-  );
-
-  const horarioSelecionado = HORARIOS.find(
-    (horario) => horario.id === horarioId
-  );
-
-  const cursoSelecionado = cursos.find(
-    (curso) => curso.id === cursoId
-  );
-
-  // =========================================================
-  // LOADING INICIAL
-  // =========================================================
-
-  if (carregando) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-slate-600">
-          <Loader2 className="w-8 h-8 animate-spin" />
-          <p>Carregando check-in...</p>
-        </div>
-      </div>
-    );
-  }
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-8">
-      <div className="max-w-6xl mx-auto">
-
-        {/* ===================================================
-            CABEÇALHO
-        =================================================== */}
-
-        <div className="mb-8">
+    <div className="w-full">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+        {/* CABEÇALHO */}
+        <div className="p-6 border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-              <CheckCircle2 className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-600" />
             </div>
 
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-slate-900">
-                Check-in de Oficinas
-              </h1>
-
-              <p className="text-slate-500 mt-1">
-                Faça a chamada manualmente e registre os alunos presentes.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* ===================================================
-            MENSAGENS
-        =================================================== */}
-
-        {erro && (
-          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 flex items-start gap-3">
-            <X className="w-5 h-5 mt-0.5 flex-shrink-0" />
-
-            <div>
-              <p className="font-semibold">
-                Ocorreu um erro
-              </p>
-
-              <p className="text-sm mt-1">
-                {erro}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {mensagem && (
-          <div className="mb-6 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3 flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 mt-0.5 flex-shrink-0" />
-
-            <div>
-              <p className="font-semibold">
-                Chamada atualizada
-              </p>
-
-              <p className="text-sm mt-1">
-                {mensagem}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ===================================================
-            ETAPA 1 - CURSO
-        =================================================== */}
-
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 mb-5">
-
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-blue-600" />
-            </div>
-
-            <div>
-              <h2 className="font-bold text-slate-900">
-                1. Escolha o curso
+              <h2 className="text-xl font-bold text-slate-900">
+                Chamada
               </h2>
 
               <p className="text-sm text-slate-500">
-                Selecione o curso da turma que terá a chamada.
+                Selecione a turma e marque os alunos presentes.
               </p>
             </div>
           </div>
-
-          {cursos.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              Nenhum curso encontrado.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {cursos.map((curso) => {
-                const selecionado =
-                  cursoId === curso.id;
-
-                return (
-                  <button
-                    key={curso.id}
-                    type="button"
-                    onClick={() =>
-                      selecionarCurso(curso.id)
-                    }
-                    className={`text-left p-4 rounded-xl border-2 transition-all ${
-                      selecionado
-                        ? "border-blue-600 bg-blue-50"
-                        : "border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p
-                          className={`font-semibold ${
-                            selecionado
-                              ? "text-blue-900"
-                              : "text-slate-800"
-                          }`}
-                        >
-                          {curso.titulo}
-                        </p>
-                      </div>
-
-                      {selecionado && (
-                        <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-                          <Check className="w-4 h-4 text-white" />
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
 
-        {/* ===================================================
-            ETAPA 2 - HORÁRIO
-        =================================================== */}
+        {/* CONTEÚDO */}
+        <div className="p-6 space-y-6">
+          {/* MENSAGEM DE ERRO */}
+          {erro && (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700">
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
 
-        {cursoId && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 mb-5">
-
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Clock3 className="w-5 h-5 text-purple-600" />
-              </div>
-
-              <div>
-                <h2 className="font-bold text-slate-900">
-                  2. Escolha o horário
-                </h2>
-
-                <p className="text-sm text-slate-500">
-                  Selecione o horário da aula.
+              <div className="flex-1">
+                <p className="font-medium">
+                  {erro}
                 </p>
               </div>
             </div>
+          )}
 
-            {/* MANHÃ */}
+          {/* MENSAGEM DE SUCESSO */}
+          {mensagem && (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-green-50 border border-green-200 text-green-700">
+              <Check className="w-5 h-5 mt-0.5 flex-shrink-0" />
 
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Sun className="w-5 h-5 text-orange-500" />
+              <p className="font-medium">
+                {mensagem}
+              </p>
+            </div>
+          )}
 
-                <h3 className="font-semibold text-slate-800">
-                  Manhã
-                </h3>
-              </div>
+          {/* SELEÇÃO DA TURMA */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Turma
+              </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {HORARIOS.filter(
-                  (horario) =>
-                    horario.periodo === "Manhã"
-                ).map((horario) => {
-                  const selecionado =
-                    horarioId === horario.id;
+              <button
+                type="button"
+                onClick={carregarTurmas}
+                disabled={isLoadingTurmas}
+                className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${
+                    isLoadingTurmas
+                      ? "animate-spin"
+                      : ""
+                  }`}
+                />
 
-                  return (
-                    <button
-                      key={horario.id}
-                      type="button"
-                      onClick={() =>
-                        selecionarHorario(
-                          horario.id
-                        )
-                      }
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
-                        selecionado
-                          ? "border-purple-600 bg-purple-50"
-                          : "border-slate-200 hover:border-purple-300 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p
-                            className={`text-lg font-bold ${
-                              selecionado
-                                ? "text-purple-900"
-                                : "text-slate-800"
-                            }`}
-                          >
-                            {horario.label}
-                          </p>
-
-                          <p className="text-xs text-slate-500 mt-1">
-                            Aula da manhã
-                          </p>
-                        </div>
-
-                        {selecionado && (
-                          <div className="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center">
-                            <Check className="w-4 h-4 text-white" />
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                Atualizar
+              </button>
             </div>
 
-            {/* TARDE */}
+            <select
+              value={turmaId}
+              onChange={(e) => {
+                setTurmaId(e.target.value);
+                setErro("");
+                setMensagem("");
+              }}
+              disabled={isLoadingTurmas}
+              className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+            >
+              <option value="">
+                {isLoadingTurmas
+                  ? "Carregando turmas..."
+                  : turmas.length === 0
+                  ? "Nenhuma turma encontrada"
+                  : "Selecione uma turma"}
+              </option>
 
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Sunset className="w-5 h-5 text-indigo-500" />
+              {turmas.map((turma) => (
+                <option
+                  key={turma.id}
+                  value={turma.id}
+                >
+                  {turma.nome}
+                  {turma.turno
+                    ? ` — ${turma.turno}`
+                    : ""}
+                  {turma.horario
+                    ? ` — ${turma.horario}`
+                    : ""}
+                </option>
+              ))}
+            </select>
 
-                <h3 className="font-semibold text-slate-800">
-                  Tarde
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {HORARIOS.filter(
-                  (horario) =>
-                    horario.periodo === "Tarde"
-                ).map((horario) => {
-                  const selecionado =
-                    horarioId === horario.id;
-
-                  return (
-                    <button
-                      key={horario.id}
-                      type="button"
-                      onClick={() =>
-                        selecionarHorario(
-                          horario.id
-                        )
-                      }
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
-                        selecionado
-                          ? "border-indigo-600 bg-indigo-50"
-                          : "border-slate-200 hover:border-indigo-300 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p
-                            className={`text-lg font-bold ${
-                              selecionado
-                                ? "text-indigo-900"
-                                : "text-slate-800"
-                            }`}
-                          >
-                            {horario.label}
-                          </p>
-
-                          <p className="text-xs text-slate-500 mt-1">
-                            Aula da tarde
-                          </p>
-                        </div>
-
-                        {selecionado && (
-                          <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center">
-                            <Check className="w-4 h-4 text-white" />
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===================================================
-            ETAPA 3 - TURMA
-        =================================================== */}
-
-        {cursoId && horarioId && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 md:p-6 mb-5">
-
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-green-600" />
-              </div>
-
-              <div>
-                <h2 className="font-bold text-slate-900">
-                  3. Escolha a turma
-                </h2>
-
-                <p className="text-sm text-slate-500">
-                  As turmas abaixo pertencem ao curso e horário selecionados.
-                </p>
-              </div>
-            </div>
-
-            {turmasFiltradas.length === 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-center">
-                <p className="font-semibold text-amber-900">
-                  Nenhuma turma encontrada
-                </p>
-
-                <p className="text-sm text-amber-700 mt-1">
-                  Não existe uma turma cadastrada para{" "}
-                  <strong>
-                    {cursoSelecionado?.titulo}
-                  </strong>{" "}
-                  no horário{" "}
-                  <strong>
-                    {horarioSelecionado?.label}
-                  </strong>
-                  .
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {turmasFiltradas.map((turma) => {
-                  const selecionado =
-                    turmaId === turma.id;
-
-                  return (
-                    <button
-                      key={turma.id}
-                      type="button"
-                      onClick={() =>
-                        selecionarTurma(
-                          turma.id
-                        )
-                      }
-                      className={`text-left p-4 rounded-xl border-2 transition-all ${
-                        selecionado
-                          ? "border-green-600 bg-green-50"
-                          : "border-slate-200 hover:border-green-300 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p
-                            className={`font-bold ${
-                              selecionado
-                                ? "text-green-900"
-                                : "text-slate-800"
-                            }`}
-                          >
-                            {turma.nome}
-                          </p>
-
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs">
-                              <Clock3 className="w-3 h-3" />
-                              {horarioSelecionado?.label}
-                            </span>
-
-                            {turma.turno && (
-                              <span className="px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs">
-                                {turma.turno}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {selecionado && (
-                          <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0">
-                            <Check className="w-4 h-4 text-white" />
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
+            {turmaSelecionada && (
+              <div className="mt-2 text-sm text-slate-500">
+                <span className="font-medium">
+                  Horário:
+                </span>{" "}
+                {turmaSelecionada.horario ||
+                  "Não informado"}
               </div>
             )}
           </div>
-        )}
 
-        {/* ===================================================
-            ETAPA 4 - CHAMADA
-        =================================================== */}
-
-        {turmaId && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-
-            {/* CABEÇALHO DA CHAMADA */}
-
-            <div className="p-5 md:p-6 border-b border-slate-200">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-
+          {/* ALUNOS */}
+          {turmaId && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-
-                    <h2 className="font-bold text-slate-900 text-xl">
-                      4. Fazer chamada
-                    </h2>
-                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    Alunos da turma
+                  </h3>
 
                   <p className="text-sm text-slate-500">
-                    {cursoSelecionado?.titulo} •{" "}
-                    {turmaSelecionada?.nome} •{" "}
-                    {horarioSelecionado?.label}
+                    {alunos.length} aluno(s) •{" "}
+                    {presentes.size} presente(s)
                   </p>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                  <p className="text-xs text-blue-600 font-medium">
-                    PRESENTES
-                  </p>
+                {alunos.length > 0 && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={marcarTodos}
+                      className="px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
+                    >
+                      Marcar todos
+                    </button>
 
-                  <p className="text-2xl font-bold text-blue-900">
-                    {presencas.size}
-                    <span className="text-sm font-normal text-blue-600">
-                      {" "}
-                      / {alunos.length}
-                    </span>
-                  </p>
-                </div>
+                    <button
+                      type="button"
+                      onClick={limparTodos}
+                      className="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
 
-            {/* FERRAMENTAS */}
+              {isLoadingAlunos ? (
+                <div className="flex items-center justify-center py-12 text-slate-500">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
 
-            <div className="p-5 md:p-6 border-b border-slate-200 bg-slate-50">
-              <div className="flex flex-col md:flex-row gap-3">
-
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-
-                  <input
-                    type="text"
-                    value={pesquisa}
-                    onChange={(e) =>
-                      setPesquisa(
-                        e.target.value
-                      )
-                    }
-                    placeholder="Pesquisar aluno..."
-                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={marcarTodos}
-                    disabled={
-                      carregandoAlunos ||
-                      alunos.length === 0
-                    }
-                    className="px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition-colors"
-                  >
-                    Marcar todos
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={limparTodos}
-                    disabled={
-                      carregandoAlunos ||
-                      alunos.length === 0
-                    }
-                    className="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-50 text-slate-700 rounded-lg text-sm font-semibold transition-colors"
-                  >
-                    Limpar
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* LISTA DE ALUNOS */}
-
-            <div className="p-5 md:p-6">
-
-              {carregandoAlunos ? (
-                <div className="py-12 flex flex-col items-center justify-center text-slate-500">
-                  <Loader2 className="w-8 h-8 animate-spin mb-3" />
-
-                  <p>
-                    Carregando alunos da turma...
-                  </p>
+                  Carregando alunos...
                 </div>
               ) : alunos.length === 0 ? (
-                <div className="py-12 text-center">
-                  <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <div className="py-10 text-center border border-dashed border-slate-300 rounded-lg">
+                  <Users className="w-10 h-10 mx-auto text-slate-300 mb-3" />
 
-                  <p className="font-semibold text-slate-700">
+                  <p className="font-medium text-slate-700">
                     Nenhum aluno encontrado
                   </p>
 
-                  <p className="text-sm text-slate-500 mt-1">
-                    Verifique se os alunos estão matriculados nesta turma.
+                  <p className="text-sm text-slate-500 mt-1 px-4">
+                    Verifique se existem matrículas com o
+                    campo <strong>turma_id</strong> preenchido
+                    para esta turma.
                   </p>
-                </div>
-              ) : alunosFiltrados.length === 0 ? (
-                <div className="py-10 text-center text-slate-500">
-                  Nenhum aluno corresponde à pesquisa.
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {alunosFiltrados.map(
-                    (aluno, index) => {
-                      const presente =
-                        presencas.has(
-                          aluno.id
-                        );
+                  {alunos.map((aluno) => {
+                    const presente =
+                      presentes.has(aluno.id);
 
-                      return (
-                        <button
-                          key={aluno.id}
-                          type="button"
-                          onClick={() =>
-                            alternarPresenca(
-                              aluno.id
-                            )
-                          }
-                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                            presente
-                              ? "border-green-500 bg-green-50"
-                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                        >
-                          {/* NÚMERO */}
-
+                    return (
+                      <button
+                        key={aluno.id}
+                        type="button"
+                        onClick={() =>
+                          alternarPresenca(
+                            aluno.id
+                          )
+                        }
+                        className={`w-full flex items-center justify-between p-4 rounded-lg border transition ${
+                          presente
+                            ? "bg-green-50 border-green-300"
+                            : "bg-white border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
                           <div
-                            className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
                               presente
                                 ? "bg-green-600 text-white"
-                                : "bg-slate-100 text-slate-500"
+                                : "bg-slate-100 text-slate-600"
                             }`}
                           >
-                            {index + 1}
+                            {aluno.nome_completo
+                              .charAt(0)
+                              .toUpperCase()}
                           </div>
 
-                          {/* NOME */}
-
-                          <div className="flex-1 min-w-0">
-                            <p
-                              className={`font-semibold truncate ${
-                                presente
-                                  ? "text-green-900"
-                                  : "text-slate-800"
-                              }`}
-                            >
+                          <div className="text-left">
+                            <p className="font-medium text-slate-900">
                               {aluno.nome_completo}
                             </p>
 
-                            <p className="text-xs text-slate-500 mt-0.5">
+                            <p className="text-xs text-slate-500">
                               {presente
                                 ? "Presente"
-                                : "Ausente"}
+                                : "Não marcado"}
                             </p>
                           </div>
+                        </div>
 
-                          {/* CHECK */}
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${
+                            presente
+                              ? "bg-green-600 border-green-600"
+                              : "border-slate-300"
+                          }`}
+                        >
+                          {presente && (
+                            <Check className="w-4 h-4 text-white" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
-                          <div
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                              presente
-                                ? "bg-green-600"
-                                : "border-2 border-slate-300 bg-white"
-                            }`}
-                          >
-                            {presente && (
-                              <Check className="w-5 h-5 text-white" />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    }
-                  )}
+              {/* BOTÃO SALVAR */}
+              {alunos.length > 0 && (
+                <div className="mt-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={salvarChamada}
+                    disabled={isSaving}
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-5 h-5" />
+                        Salvar chamada
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
             </div>
-
-            {/* RODAPÉ */}
-
-            {alunos.length > 0 && (
-              <div className="p-5 md:p-6 bg-slate-50 border-t border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-
-                <div>
-                  <p className="font-semibold text-slate-800">
-                    {presencas.size} aluno(s) marcado(s) como presente
-                  </p>
-
-                  <p className="text-xs text-slate-500 mt-1">
-                    Ao salvar, a chamada de hoje desta turma será atualizada.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={salvarChamada}
-                  disabled={salvando}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl font-semibold transition-colors"
-                >
-                  {salvando ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5" />
-                      Salvar chamada
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
