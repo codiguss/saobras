@@ -1,15 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  Check,
-  Search,
-  Users,
-  Save,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Loader2, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 type Turma = {
@@ -17,270 +9,174 @@ type Turma = {
   nome: string;
   curso_id: string;
   turno: string | null;
+  cursos?: { titulo: string }[] | null;
 };
 
 type Aluno = {
   id: string;
   nome_completo: string;
-  presente: boolean;
 };
 
-type Matricula = {
+type Presenca = {
   id: string;
   aluno_id: string;
-  curso_id: string;
-  turma_id: string | null;
-  alunos: {
-    id: string;
-    nome_completo: string;
-  } | null;
 };
 
 export default function FormCheckin() {
   const [turmas, setTurmas] = useState<Turma[]>([]);
-  const [turmaSelecionada, setTurmaSelecionada] =
-    useState("");
-
+  const [turmaId, setTurmaId] = useState("");
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [pesquisa, setPesquisa] = useState("");
-
-  const [carregandoTurmas, setCarregandoTurmas] =
-    useState(true);
-
-  const [carregandoAlunos, setCarregandoAlunos] =
-    useState(false);
-
-  const [salvando, setSalvando] = useState(false);
-
+  const [presentes, setPresentes] = useState<Set<string>>(new Set());
+  const [isLoadingTurmas, setIsLoadingTurmas] = useState(true);
+  const [isLoadingAlunos, setIsLoadingAlunos] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [erro, setErro] = useState("");
   const [mensagem, setMensagem] = useState("");
 
-  /*
-   * ============================================================
-   * BUSCAR TURMAS
-   * ============================================================
-   */
+  const turmaSelecionada = useMemo(
+    () => turmas.find((turma) => turma.id === turmaId),
+    [turmas, turmaId]
+  );
 
   useEffect(() => {
-    const buscarTurmas = async () => {
-      setCarregandoTurmas(true);
+    const carregarTurmas = async () => {
+      setIsLoadingTurmas(true);
+      setErro("");
 
       const { data, error } = await supabase
         .from("turmas")
-        .select("id, nome, curso_id, turno")
+        .select("id, nome, curso_id, turno, cursos(titulo)")
         .order("nome", { ascending: true });
 
       if (error) {
-        console.error("Erro ao buscar turmas:", error);
-        setMensagem(
-          "Não foi possível carregar as turmas."
-        );
+        console.error(error);
+        setErro("Não foi possível carregar as turmas: " + error.message);
         setTurmas([]);
       } else {
-        setTurmas(data || []);
+        setTurmas((data || []) as Turma[]);
       }
 
-      setCarregandoTurmas(false);
+      setIsLoadingTurmas(false);
     };
 
-    buscarTurmas();
+    carregarTurmas();
   }, []);
 
-  /*
-   * ============================================================
-   * BUSCAR ALUNOS DA TURMA
-   * ============================================================
-   */
-
-  const carregarAlunos = async (turmaId: string) => {
+  useEffect(() => {
     if (!turmaId) {
       setAlunos([]);
+      setPresentes(new Set());
       return;
     }
 
-    setCarregandoAlunos(true);
-    setMensagem("");
+    const carregarAlunos = async () => {
+      setIsLoadingAlunos(true);
+      setErro("");
+      setMensagem("");
 
-    /*
-     * Buscamos somente matrículas que possuem
-     * turma_id igual à turma selecionada.
-     */
-
-    const { data, error } = await supabase
-      .from("matriculas")
-      .select(`
-        id,
-        aluno_id,
-        curso_id,
-        turma_id,
-        alunos (
-          id,
-          nome_completo
-        )
-      `)
-      .eq("turma_id", turmaId);
-
-    if (error) {
-      console.error(
-        "Erro ao buscar alunos:",
-        error
-      );
-
-      setAlunos([]);
-
-      setMensagem(
-        "Erro ao carregar os alunos da turma: " +
-          error.message
-      );
-
-      setCarregandoAlunos(false);
-      return;
-    }
-
-    const matriculas =
-      (data || []) as unknown as Matricula[];
-
-    /*
-     * Transformamos as matrículas em alunos.
-     */
-
-    const listaAlunos: Aluno[] = matriculas
-      .filter((matricula) => matricula.alunos)
-      .map((matricula) => ({
-        id: matricula.alunos!.id,
-        nome_completo:
-          matricula.alunos!.nome_completo,
-        presente: false,
-      }))
-      .sort((a, b) =>
-        a.nome_completo.localeCompare(
-          b.nome_completo,
-          "pt-BR"
-        )
-      );
-
-    /*
-     * Verifica quem já possui presença registrada
-     * hoje para essa turma.
-     *
-     * data_hora representa o momento em que a
-     * presença foi registrada.
-     */
-
-    const inicioHoje = new Date();
-    inicioHoje.setHours(0, 0, 0, 0);
-
-    const fimHoje = new Date();
-    fimHoje.setHours(23, 59, 59, 999);
-
-    const { data: presencas, error: presencaError } =
-      await supabase
-        .from("presencas")
+      // Primeiro pegamos as matrículas da turma.
+      const { data: matriculas, error: matriculasError } = await supabase
+        .from("matriculas")
         .select("aluno_id")
-        .eq("turma_id", turmaId)
-        .eq("metodo", "manual")
-        .gte(
-          "data_hora",
-          inicioHoje.toISOString()
-        )
-        .lte(
-          "data_hora",
-          fimHoje.toISOString()
+        .eq("turma_id", turmaId);
+
+      if (matriculasError) {
+        console.error(matriculasError);
+        setErro(
+          "Não foi possível carregar as matrículas da turma: " +
+            matriculasError.message
         );
+        setAlunos([]);
+        setPresentes(new Set());
+        setIsLoadingAlunos(false);
+        return;
+      }
 
-    if (presencaError) {
-      console.error(
-        "Erro ao buscar presenças:",
-        presencaError
+      const alunoIds = Array.from(
+        new Set((matriculas || []).map((item) => item.aluno_id).filter(Boolean))
       );
-    }
 
-    const presentes = new Set(
-      (presencas || []).map(
-        (presenca) => presenca.aluno_id
-      )
-    );
+      if (alunoIds.length === 0) {
+        setAlunos([]);
+        setPresentes(new Set());
+        setIsLoadingAlunos(false);
+        return;
+      }
 
-    const alunosComPresenca = listaAlunos.map(
-      (aluno) => ({
-        ...aluno,
-        presente: presentes.has(aluno.id),
-      })
-    );
+      // Depois buscamos os alunos. Isso evita depender do relacionamento
+      // matriculas -> alunos configurado no Supabase.
+      const { data: alunosData, error: alunosError } = await supabase
+        .from("alunos")
+        .select("id, nome_completo")
+        .in("id", alunoIds)
+        .order("nome_completo", { ascending: true });
 
-    setAlunos(alunosComPresenca);
-    setCarregandoAlunos(false);
-  };
+      if (alunosError) {
+        console.error(alunosError);
+        setErro("Não foi possível carregar os alunos: " + alunosError.message);
+        setAlunos([]);
+        setPresentes(new Set());
+        setIsLoadingAlunos(false);
+        return;
+      }
 
-  /*
-   * ============================================================
-   * SELECIONAR TURMA
-   * ============================================================
-   */
+      setAlunos((alunosData || []) as Aluno[]);
 
-  const handleTurmaChange = (
-    turmaId: string
-  ) => {
-    setTurmaSelecionada(turmaId);
-    setPesquisa("");
-    setMensagem("");
+      // Carrega os alunos que já tiveram presença registrada hoje nessa turma.
+      const inicioHoje = new Date();
+      inicioHoje.setHours(0, 0, 0, 0);
+      const fimHoje = new Date();
+      fimHoje.setHours(23, 59, 59, 999);
 
-    carregarAlunos(turmaId);
-  };
+      const { data: presencasData, error: presencasError } = await supabase
+        .from("presencas")
+        .select("id, aluno_id")
+        .eq("turma_id", turmaId)
+        .gte("data_hora", inicioHoje.toISOString())
+        .lte("data_hora", fimHoje.toISOString());
 
-  /*
-   * ============================================================
-   * MARCAR / DESMARCAR ALUNO
-   * ============================================================
-   */
+      if (presencasError) {
+        // Se a leitura das presenças falhar, ainda mostramos os alunos.
+        console.error("Erro ao carregar presenças:", presencasError.message);
+        setPresentes(new Set());
+      } else {
+        setPresentes(
+          new Set(
+            ((presencasData || []) as Presenca[]).map(
+              (presenca) => presenca.aluno_id
+            )
+          )
+        );
+      }
+
+      setIsLoadingAlunos(false);
+    };
+
+    carregarAlunos();
+  }, [turmaId]);
 
   const alternarPresenca = (alunoId: string) => {
-    setAlunos((lista) =>
-      lista.map((aluno) =>
-        aluno.id === alunoId
-          ? {
-              ...aluno,
-              presente: !aluno.presente,
-            }
-          : aluno
-      )
-    );
+    setMensagem("");
+    setPresentes((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(alunoId)) {
+        novo.delete(alunoId);
+      } else {
+        novo.add(alunoId);
+      }
+      return novo;
+    });
   };
-
-  /*
-   * ============================================================
-   * MARCAR TODOS
-   * ============================================================
-   */
 
   const marcarTodos = () => {
-    setAlunos((lista) =>
-      lista.map((aluno) => ({
-        ...aluno,
-        presente: true,
-      }))
-    );
+    setPresentes(new Set(alunos.map((aluno) => aluno.id)));
+    setMensagem("");
   };
 
-  /*
-   * ============================================================
-   * DESMARCAR TODOS
-   * ============================================================
-   */
-
-  const desmarcarTodos = () => {
-    setAlunos((lista) =>
-      lista.map((aluno) => ({
-        ...aluno,
-        presente: false,
-      }))
-    );
+  const limparTodos = () => {
+    setPresentes(new Set());
+    setMensagem("");
   };
-
-  /*
-   * ============================================================
-   * DESCOBRIR OPERADOR LOGADO
-   * ============================================================
-   */
 
   const getOperadorId = async (): Promise<string> => {
     const {
@@ -288,474 +184,245 @@ export default function FormCheckin() {
       error: userError,
     } = await supabase.auth.getUser();
 
-    if (userError) {
-      throw new Error(
-        "Não foi possível identificar o usuário logado: " +
-          userError.message
-      );
-    }
-
-    if (!user) {
-      throw new Error(
-        "Usuário não está logado."
-      );
+    if (userError || !user) {
+      throw new Error("Usuário não está logado. Faça login novamente.");
     }
 
     if (!user.email) {
-      throw new Error(
-        "O usuário logado não possui e-mail."
-      );
+      throw new Error("O usuário logado não possui e-mail.");
     }
 
-    const { data: operador, error } =
-      await supabase
-        .from("operadores")
-        .select("id")
-        .eq("email", user.email)
-        .maybeSingle();
+    const { data: operador, error } = await supabase
+      .from("operadores")
+      .select("id")
+      .eq("email", user.email)
+      .maybeSingle();
 
     if (error) {
-      throw new Error(
-        "Erro ao localizar operador: " +
-          error.message
-      );
+      throw new Error("Erro ao localizar operador: " + error.message);
     }
 
     if (!operador) {
       throw new Error(
-        "Nenhum operador foi encontrado para o e-mail " +
-          user.email
+        `Nenhum operador foi encontrado com o e-mail ${user.email}.`
       );
     }
 
     return operador.id;
   };
 
-  /*
-   * ============================================================
-   * SALVAR CHAMADA
-   * ============================================================
-   */
-
-  const salvarChamada = async () => {
-    if (!turmaSelecionada) {
-      alert("Selecione uma turma.");
+  const salvarPresencas = async () => {
+    if (!turmaId || !turmaSelecionada) {
+      setErro("Selecione uma turma.");
       return;
     }
 
-    if (alunos.length === 0) {
-      alert(
-        "Não existem alunos matriculados nesta turma."
-      );
-      return;
-    }
-
-    setSalvando(true);
+    setIsSaving(true);
+    setErro("");
     setMensagem("");
 
     try {
-      const operadorId =
-        await getOperadorId();
+      const operadorId = await getOperadorId();
 
-      /*
-       * Primeiro removemos as presenças manuais
-       * registradas hoje para essa turma.
-       *
-       * Depois gravamos novamente somente os alunos
-       * que estão marcados como presentes.
-       */
-
+      // Remove as presenças de hoje dessa turma e grava novamente
+      // exatamente os alunos marcados como presentes.
       const inicioHoje = new Date();
       inicioHoje.setHours(0, 0, 0, 0);
-
       const fimHoje = new Date();
       fimHoje.setHours(23, 59, 59, 999);
 
-      const { error: deleteError } =
-        await supabase
-          .from("presencas")
-          .delete()
-          .eq("turma_id", turmaSelecionada)
-          .eq("metodo", "manual")
-          .gte(
-            "data_hora",
-            inicioHoje.toISOString()
-          )
-          .lte(
-            "data_hora",
-            fimHoje.toISOString()
-          );
+      const { error: deleteError } = await supabase
+        .from("presencas")
+        .delete()
+        .eq("turma_id", turmaId)
+        .gte("data_hora", inicioHoje.toISOString())
+        .lte("data_hora", fimHoje.toISOString());
 
       if (deleteError) {
         throw new Error(
-          "Não foi possível atualizar a chamada: " +
+          "Não foi possível atualizar as presenças de hoje: " +
             deleteError.message
         );
       }
 
-      const presentes = alunos.filter(
-        (aluno) => aluno.presente
-      );
+      const presentesArray = Array.from(presentes);
 
-      /*
-       * Se ninguém estiver presente,
-       * simplesmente salvamos a chamada vazia.
-       */
+      if (presentesArray.length > 0) {
+        const agora = new Date().toISOString();
 
-      if (presentes.length > 0) {
-        const registros = presentes.map(
-          (aluno) => ({
-            aluno_id: aluno.id,
+        const registros = presentesArray.map((alunoId) => ({
+          aluno_id: alunoId,
+          curso_id: turmaSelecionada.curso_id,
+          turma_id: turmaId,
+          operador_id: operadorId,
+          metodo: "manual",
+          data_hora: agora,
+        }));
 
-            /*
-             * O curso vem da turma selecionada.
-             */
-            curso_id:
-              turmas.find(
-                (turma) =>
-                  turma.id ===
-                  turmaSelecionada
-              )?.curso_id || null,
-
-            turma_id: turmaSelecionada,
-
-            operador_id: operadorId,
-
-            metodo: "manual",
-
-            data_hora:
-              new Date().toISOString(),
-          })
-        );
-
-        const { error: insertError } =
-          await supabase
-            .from("presencas")
-            .insert(registros);
+        const { error: insertError } = await supabase
+          .from("presencas")
+          .insert(registros);
 
         if (insertError) {
           throw new Error(
-            "Erro ao salvar as presenças: " +
+            "Não foi possível registrar as presenças: " +
               insertError.message
           );
         }
       }
 
       setMensagem(
-        `Chamada salva com sucesso! ${presentes.length} aluno(s) presente(s).`
-      );
-
-      /*
-       * Atualiza a lista para garantir que o estado
-       * esteja sincronizado com o banco.
-       */
-      await carregarAlunos(
-        turmaSelecionada
+        presentesArray.length === 1
+          ? "1 presença registrada com sucesso."
+          : `${presentesArray.length} presenças registradas com sucesso.`
       );
     } catch (error) {
-      const texto =
+      console.error(error);
+      setErro(
         error instanceof Error
           ? error.message
-          : "Erro desconhecido.";
-
-      console.error(error);
-
-      setMensagem(
-        "Erro ao salvar chamada: " + texto
+          : "Ocorreu um erro ao salvar o check-in."
       );
     } finally {
-      setSalvando(false);
+      setIsSaving(false);
     }
   };
 
-  /*
-   * ============================================================
-   * FILTRO DE PESQUISA
-   * ============================================================
-   */
-
-  const alunosFiltrados = alunos.filter(
-    (aluno) =>
-      aluno.nome_completo
-        .toLowerCase()
-        .includes(
-          pesquisa.toLowerCase()
-        )
-  );
-
-  const quantidadePresentes =
-    alunos.filter(
-      (aluno) => aluno.presente
-    ).length;
-
-  /*
-   * ============================================================
-   * INTERFACE
-   * ============================================================
-   */
-
   return (
-    <div className="w-full">
-      {/* CABEÇALHO */}
-
+    <div className="w-full max-w-5xl mx-auto p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">
-          Chamada
-        </h1>
-
-        <p className="mt-1 text-sm text-slate-500">
-          Selecione uma turma e marque os alunos
-          presentes.
+        <h1 className="text-3xl font-bold text-slate-900">Check-in de Oficinas</h1>
+        <p className="text-slate-500 mt-2">
+          Faça a chamada manualmente e marque os alunos que compareceram.
         </p>
       </div>
 
-      {/* SELEÇÃO DA TURMA */}
+      {erro && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {erro}
+        </div>
+      )}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <label className="mb-2 block text-sm font-medium text-slate-700">
+      {mensagem && (
+        <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {mensagem}
+        </div>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+        <label className="block text-sm font-semibold text-slate-700 mb-2">
           Turma
         </label>
 
         <select
-          value={turmaSelecionada}
-          onChange={(e) =>
-            handleTurmaChange(
-              e.target.value
-            )
-          }
-          disabled={carregandoTurmas}
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          value={turmaId}
+          onChange={(e) => setTurmaId(e.target.value)}
+          disabled={isLoadingTurmas}
+          className="w-full px-3 py-2 border border-slate-300 rounded-md text-slate-900 focus:outline-none focus:border-blue-500 disabled:bg-slate-100"
         >
           <option value="">
-            {carregandoTurmas
-              ? "Carregando turmas..."
-              : "Selecione uma turma"}
+            {isLoadingTurmas ? "Carregando turmas..." : "Selecione uma turma"}
           </option>
-
           {turmas.map((turma) => (
-            <option
-              key={turma.id}
-              value={turma.id}
-            >
+            <option key={turma.id} value={turma.id}>
               {turma.nome}
-              {turma.turno
-                ? ` — ${turma.turno}`
+              {turma.turno ? ` — ${turma.turno}` : ""}
+              {turma.cursos?.[0]?.titulo
+                ? ` — ${turma.cursos[0].titulo}`
                 : ""}
             </option>
           ))}
         </select>
       </div>
 
-      {/* ÁREA DA CHAMADA */}
-
-      {turmaSelecionada && (
-        <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
-          {/* TOPO */}
-
-          <div className="border-b border-slate-200 p-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Users
-                    size={20}
-                    className="text-blue-600"
-                  />
-
-                  <h2 className="text-lg font-semibold text-slate-900">
-                    Lista de alunos
-                  </h2>
-                </div>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Presentes:{" "}
-                  <strong>
-                    {quantidadePresentes}
-                  </strong>{" "}
-                  de{" "}
-                  <strong>
-                    {alunos.length}
-                  </strong>
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={marcarTodos}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Marcar todos
-                </button>
-
-                <button
-                  type="button"
-                  onClick={desmarcarTodos}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Limpar
-                </button>
-              </div>
+      {turmaId && (
+        <div className="mt-5 bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                Alunos da turma
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">
+                {alunos.length} aluno(s) — {presentes.size} presente(s)
+              </p>
             </div>
 
-            {/* PESQUISA */}
-
-            <div className="relative mt-4">
-              <Search
-                size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-
-              <input
-                type="text"
-                value={pesquisa}
-                onChange={(e) =>
-                  setPesquisa(
-                    e.target.value
-                  )
-                }
-                placeholder="Pesquisar aluno..."
-                className="w-full rounded-lg border border-slate-300 py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={marcarTodos}
+                disabled={isLoadingAlunos || alunos.length === 0}
+                className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 disabled:opacity-50"
+              >
+                Marcar todos
+              </button>
+              <button
+                type="button"
+                onClick={limparTodos}
+                disabled={isLoadingAlunos || alunos.length === 0}
+                className="px-3 py-2 rounded-md bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 disabled:opacity-50"
+              >
+                Limpar
+              </button>
             </div>
           </div>
 
-          {/* LISTA */}
+          {isLoadingAlunos ? (
+            <div className="p-10 flex items-center justify-center gap-2 text-slate-500">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Carregando alunos...
+            </div>
+          ) : alunos.length === 0 ? (
+            <div className="p-10 text-center text-slate-500">
+              Nenhum aluno está matriculado nessa turma.
+              <br />
+              Verifique se a matrícula possui o <strong>turma_id</strong> preenchido.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {alunos.map((aluno, index) => {
+                const presente = presentes.has(aluno.id);
 
-          <div className="p-5">
-            {carregandoAlunos ? (
-              <div className="flex items-center justify-center py-12 text-slate-500">
-                <Loader2
-                  size={24}
-                  className="mr-2 animate-spin"
-                />
-
-                Carregando alunos...
-              </div>
-            ) : alunosFiltrados.length ===
-              0 ? (
-              <div className="py-12 text-center">
-                <Users
-                  size={40}
-                  className="mx-auto text-slate-300"
-                />
-
-                <p className="mt-3 font-medium text-slate-700">
-                  {alunos.length === 0
-                    ? "Nenhum aluno matriculado nesta turma."
-                    : "Nenhum aluno encontrado."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {alunosFiltrados.map(
-                  (aluno) => (
-                    <button
-                      type="button"
-                      key={aluno.id}
-                      onClick={() =>
-                        alternarPresenca(
-                          aluno.id
-                        )
-                      }
-                      className={`flex w-full items-center justify-between rounded-lg border p-4 text-left transition ${
-                        aluno.presente
-                          ? "border-green-200 bg-green-50"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
+                return (
+                  <button
+                    type="button"
+                    key={aluno.id}
+                    onClick={() => alternarPresenca(aluno.id)}
+                    className={`w-full p-4 flex items-center gap-4 text-left transition-colors ${
+                      presente ? "bg-green-50" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="w-8 text-sm text-slate-400">{index + 1}</span>
+                    <span className="flex-1 font-medium text-slate-800">
+                      {aluno.nome_completo}
+                    </span>
+                    <span
+                      className={`w-9 h-9 rounded-full border flex items-center justify-center ${
+                        presente
+                          ? "bg-green-600 border-green-600 text-white"
+                          : "bg-white border-slate-300 text-transparent"
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                            aluno.presente
-                              ? "bg-green-100 text-green-700"
-                              : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          {aluno.presente ? (
-                            <Check
-                              size={20}
-                            />
-                          ) : (
-                            <span className="text-sm font-semibold">
-                              {aluno.nome_completo
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-
-                        <span className="font-medium text-slate-800">
-                          {aluno.nome_completo}
-                        </span>
-                      </div>
-
-                      <div>
-                        {aluno.presente ? (
-                          <span className="flex items-center gap-1 text-sm font-medium text-green-700">
-                            <CheckCircle2
-                              size={18}
-                            />
-                            Presente
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 text-sm text-slate-400">
-                            <XCircle
-                              size={18}
-                            />
-                            Ausente
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  )
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* RODAPÉ */}
-
-          <div className="flex flex-col gap-3 border-t border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm text-slate-500">
-              {quantidadePresentes} aluno(s)
-              marcado(s) como presente
+                      <Check className="w-5 h-5" />
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+          )}
 
+          <div className="p-5 border-t border-slate-200 flex justify-end">
             <button
               type="button"
-              onClick={salvarChamada}
-              disabled={
-                salvando ||
-                carregandoAlunos
-              }
-              className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={salvarPresencas}
+              disabled={isSaving || isLoadingAlunos || alunos.length === 0}
+              className="px-5 py-2.5 rounded-md bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
-              {salvando ? (
-                <>
-                  <Loader2
-                    size={18}
-                    className="animate-spin"
-                  />
-
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  <Save size={18} />
-
-                  Salvar chamada
-                </>
-              )}
+              {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isSaving ? "Salvando..." : "Salvar chamada"}
             </button>
           </div>
-        </div>
-      )}
-
-      {/* MENSAGEM */}
-
-      {mensagem && (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
-          {mensagem}
         </div>
       )}
     </div>
