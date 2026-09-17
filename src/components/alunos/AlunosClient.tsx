@@ -46,7 +46,7 @@ export type Matricula = {
   data_matricula?: string | null;
   cursos?: {
     titulo: string;
-  }[] | null;
+  } | { titulo: string }[] | null;
 };
 
 const AVAILABLE_TAGS = [
@@ -1236,8 +1236,7 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                               <div>
                                 <div className="flex justify-between items-start mb-2">
                                   <p className="font-bold text-slate-900 text-sm">
-                                    {mat.cursos?.[0]
-                                      ?.titulo ||
+                                    {(Array.isArray(mat.cursos) ? mat.cursos[0]?.titulo : mat.cursos?.titulo) ||
                                       "Curso não especificado"}
                                   </p>
 
@@ -1247,9 +1246,8 @@ export function AlunosClient({ alunos }: { alunos: Aluno[] }) {
                                 </div>
 
                                 <p className="text-xs text-slate-500">
-                                  {mat.cursos?.[0]
-                                    ?.titulo
-                                    ? `Curso: ${mat.cursos[0].titulo}`
+                                  {(Array.isArray(mat.cursos) ? mat.cursos[0]?.titulo : mat.cursos?.titulo)
+                                    ? `Curso: ${Array.isArray(mat.cursos) ? mat.cursos[0].titulo : mat.cursos?.titulo}`
                                     : "Curso não disponível"}
                                 </p>
 

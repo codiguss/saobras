@@ -31,7 +31,7 @@ export async function middleware(request: NextRequest) {
   
   const isAuthPage = request.nextUrl.pathname.startsWith('/login')
   const isRootPage = request.nextUrl.pathname === '/'
-  const isDashboardPage = ['/alunos', '/checkin', '/cursos'].some(path => request.nextUrl.pathname.startsWith(path))
+  const isDashboardPage = ['/alunos', '/checkin', '/cursos', '/matriculas', '/operadores', '/historico', '/relatorios'].some(path => request.nextUrl.pathname.startsWith(path))
 
   if (user) {
     if (isAuthPage || isRootPage) {

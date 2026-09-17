@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className={inter.className}>
-      <body className="bg-slate-50 text-slate-900 antialiased min-h-screen"
+      <body className="bg-slate-50 text-slate-900 text-sm antialiased min-h-screen"
       suppressHydrationWarning>
         {children}
       </body>

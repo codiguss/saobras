@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, BookOpen, CheckSquare, LayoutDashboard, LogOut, GraduationCap } from "lucide-react";
+import { Users, BookOpen, CheckSquare, LayoutDashboard, LogOut, GraduationCap, Shield, Clock, FileText } from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -13,6 +13,9 @@ export function Sidebar() {
     { name: "Matrículas", href: "/matriculas", icon: GraduationCap },
     { name: "Frequência (Check-in)", href: "/checkin", icon: CheckSquare },
     { name: "Cursos e Turmas", href: "/cursos", icon: BookOpen },
+    { name: "Histórico", href: "/historico", icon: Clock },
+    { name: "Relatórios", href: "/relatorios", icon: FileText },
+    { name: "Operadores", href: "/operadores", icon: Shield },
   ];
 
   return (

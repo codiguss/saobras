@@ -430,7 +430,7 @@ export default function FormCheckin() {
       const exclusoes: string[] = [];
 
       const dataHoraRegistro =
-        `${dataSelecionada}T12:00:00.000Z`;
+        new Date().toISOString();
 
       Object.entries(frequencia).forEach(
         ([alunoId, state]) => {
@@ -696,11 +696,226 @@ export default function FormCheckin() {
   }, [dataSelecionada]);
 
   // ==========================================================
+  // CHECK-IN INDIVIDUAL POR CPF (RF11)
+  // ==========================================================
+
+  const [cpfBusca, setCpfBusca] = useState("");
+  const [cpfResultado, setCpfResultado] = useState<{
+    aluno: { id: string; nome_completo: string; cpf: string } | null;
+    matriculas: { id: string; curso_id: string; turma_id: string; cursos: { titulo: string } | null; turmas: { nome: string } | null }[];
+    status: "idle" | "buscando" | "encontrado" | "nao_encontrado" | "confirmado" | "erro";
+    mensagem: string;
+  }>({ aluno: null, matriculas: [], status: "idle", mensagem: "" });
+  const [cpfSaving, setCpfSaving] = useState(false);
+
+  const buscarPorCpf = async () => {
+    const cpfLimpo = cpfBusca.replace(/\D/g, "");
+    if (cpfLimpo.length < 11) {
+      setCpfResultado({ aluno: null, matriculas: [], status: "erro", mensagem: "Digite um CPF válido com 11 dígitos." });
+      return;
+    }
+
+    setCpfResultado({ aluno: null, matriculas: [], status: "buscando", mensagem: "" });
+
+    try {
+      // 1. Buscar aluno pelo CPF
+      const { data: aluno, error: alunoError } = await supabase
+        .from("alunos")
+        .select("id, nome_completo, cpf")
+        .eq("cpf", cpfLimpo)
+        .maybeSingle();
+
+      if (alunoError) throw alunoError;
+
+      if (!aluno) {
+        setCpfResultado({ aluno: null, matriculas: [], status: "nao_encontrado", mensagem: "Nenhum participante encontrado com este CPF." });
+        return;
+      }
+
+      // 2. Buscar matrículas do aluno
+      const { data: mats, error: matsError } = await supabase
+        .from("matriculas")
+        .select("id, curso_id, turma_id, cursos(titulo), turmas(nome)")
+        .eq("aluno_id", aluno.id);
+
+      if (matsError) throw matsError;
+
+      const matsFormatted = (mats || []).map((m: any) => ({
+        ...m,
+        cursos: Array.isArray(m.cursos) ? m.cursos[0] : m.cursos,
+        turmas: Array.isArray(m.turmas) ? m.turmas[0] : m.turmas,
+      }));
+
+      if (matsFormatted.length === 0) {
+        setCpfResultado({ aluno, matriculas: [], status: "erro", mensagem: `${aluno.nome_completo} não possui matrículas ativas.` });
+        return;
+      }
+
+      setCpfResultado({ aluno, matriculas: matsFormatted, status: "encontrado", mensagem: "" });
+    } catch (err: any) {
+      setCpfResultado({ aluno: null, matriculas: [], status: "erro", mensagem: "Erro ao buscar: " + err.message });
+    }
+  };
+
+  const confirmarCheckinCpf = async (matriculaIdx: number) => {
+    if (!cpfResultado.aluno) return;
+    const mat = cpfResultado.matriculas[matriculaIdx];
+    if (!mat) return;
+
+    setCpfSaving(true);
+    try {
+      const operadorId = await getOperadorId();
+      const agora = new Date().toISOString();
+
+      // Verificar se já tem presença hoje
+      const hoje = new Date().toISOString().split("T")[0];
+      const { data: jaExiste } = await supabase
+        .from("presencas")
+        .select("id")
+        .eq("aluno_id", cpfResultado.aluno.id)
+        .eq("turma_id", mat.turma_id)
+        .gte("data_hora", `${hoje}T00:00:00.000Z`)
+        .lte("data_hora", `${hoje}T23:59:59.999Z`)
+        .maybeSingle();
+
+      if (jaExiste) {
+        setCpfResultado(prev => ({ ...prev, status: "erro", mensagem: "Este participante já possui presença registrada hoje nesta turma." }));
+        setCpfSaving(false);
+        return;
+      }
+
+      const { error } = await supabase.from("presencas").insert({
+        aluno_id: cpfResultado.aluno.id,
+        curso_id: mat.curso_id,
+        turma_id: mat.turma_id,
+        operador_id: operadorId,
+        metodo: "cpf",
+        data_hora: agora,
+      });
+
+      if (error) throw error;
+
+      setCpfResultado(prev => ({
+        ...prev,
+        status: "confirmado",
+        mensagem: `Presença de ${prev.aluno?.nome_completo} confirmada com sucesso!`,
+      }));
+
+      // Limpar após 3 segundos
+      setTimeout(() => {
+        setCpfBusca("");
+        setCpfResultado({ aluno: null, matriculas: [], status: "idle", mensagem: "" });
+      }, 3000);
+    } catch (err: any) {
+      setCpfResultado(prev => ({ ...prev, status: "erro", mensagem: "Erro ao registrar presença: " + err.message }));
+    } finally {
+      setCpfSaving(false);
+    }
+  };
+
+  const formatCpfDisplay = (cpf: string) => {
+    const d = cpf.replace(/\D/g, "");
+    if (d.length === 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9,11)}`;
+    return cpf;
+  };
+
+  // ==========================================================
   // TELA
   // ==========================================================
 
   return (
     <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-10">
+
+      {/* CHECK-IN RÁPIDO POR CPF */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+            <Search className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Check-in Rápido por CPF</h2>
+            <p className="text-xs text-slate-500">Digite o CPF do participante para registrar a presença individual.</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3 items-end">
+          <div className="flex-1">
+            <input
+              type="text"
+              value={cpfBusca}
+              onChange={(e) => setCpfBusca(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") buscarPorCpf(); }}
+              placeholder="000.000.000-00"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm"
+            />
+          </div>
+          <button
+            onClick={buscarPorCpf}
+            disabled={cpfResultado.status === "buscando"}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <Search className="w-4 h-4" />
+            {cpfResultado.status === "buscando" ? "Buscando..." : "Buscar"}
+          </button>
+        </div>
+
+        {/* Resultado da busca */}
+        {cpfResultado.status === "nao_encontrado" && (
+          <div className="mt-4 p-4 rounded-xl bg-orange-50 border border-orange-200 text-orange-700 text-sm font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {cpfResultado.mensagem}
+          </div>
+        )}
+
+        {cpfResultado.status === "erro" && (
+          <div className="mt-4 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {cpfResultado.mensagem}
+          </div>
+        )}
+
+        {cpfResultado.status === "confirmado" && (
+          <div className="mt-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium flex items-center gap-2">
+            <Check className="w-5 h-5 shrink-0" />
+            {cpfResultado.mensagem}
+          </div>
+        )}
+
+        {cpfResultado.status === "encontrado" && cpfResultado.aluno && (
+          <div className="mt-4 p-4 rounded-xl bg-blue-50 border border-blue-200 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-200 flex items-center justify-center text-blue-800 font-bold text-sm">
+                {cpfResultado.aluno.nome_completo.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="font-bold text-slate-900">{cpfResultado.aluno.nome_completo}</p>
+                <p className="text-xs text-slate-500">CPF: {formatCpfDisplay(cpfResultado.aluno.cpf)}</p>
+              </div>
+            </div>
+
+            <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Selecione o curso/turma para confirmar a presença:</p>
+
+            <div className="space-y-2">
+              {cpfResultado.matriculas.map((mat, idx) => (
+                <div key={mat.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-blue-200">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{mat.cursos?.titulo || "Curso"}</p>
+                    <p className="text-xs text-slate-500">Turma: {mat.turmas?.nome || "—"}</p>
+                  </div>
+                  <button
+                    onClick={() => confirmarCheckinCpf(idx)}
+                    disabled={cpfSaving}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {cpfSaving ? "Registrando..." : "Confirmar Presença"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* CABEÇALHO */}
 
