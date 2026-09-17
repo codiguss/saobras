@@ -8,7 +8,6 @@ export function Sidebar() {
   const pathname = usePathname();
 
   const menuItems = [
-    { name: "Painel Inicial", href: "/", icon: LayoutDashboard },
     { name: "Gestão de Alunos", href: "/alunos", icon: Users },
     { name: "Matrículas", href: "/matriculas", icon: GraduationCap },
     { name: "Frequência (Check-in)", href: "/checkin", icon: CheckSquare },

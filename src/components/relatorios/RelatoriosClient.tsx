@@ -58,13 +58,38 @@ export default function RelatoriosClient({
   const [buscou, setBuscou] = useState(false);
 
   // Filtros
-  const [filtroCpf, setFiltroCpf] = useState("");
-  const [filtroNome, setFiltroNome] = useState("");
   const [filtroCurso, setFiltroCurso] = useState("");
   const [filtroTurma, setFiltroTurma] = useState("");
-  const [filtroOperador, setFiltroOperador] = useState("");
   const [filtroDataInicio, setFiltroDataInicio] = useState("");
   const [filtroDataFim, setFiltroDataFim] = useState("");
+  const [filtroPeriodo, setFiltroPeriodo] = useState("");
+
+  const handlePeriodoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setFiltroPeriodo(val);
+    
+    const hoje = new Date();
+    hoje.setMinutes(hoje.getMinutes() - hoje.getTimezoneOffset());
+    
+    if (val === "diario") {
+      const dateStr = hoje.toISOString().split("T")[0];
+      setFiltroDataInicio(dateStr);
+      setFiltroDataFim(dateStr);
+    } else if (val === "semanal") {
+      const inicio = new Date(hoje);
+      inicio.setDate(inicio.getDate() - 7);
+      setFiltroDataInicio(inicio.toISOString().split("T")[0]);
+      setFiltroDataFim(hoje.toISOString().split("T")[0]);
+    } else if (val === "mensal") {
+      const inicio = new Date(hoje);
+      inicio.setDate(inicio.getDate() - 30);
+      setFiltroDataInicio(inicio.toISOString().split("T")[0]);
+      setFiltroDataFim(hoje.toISOString().split("T")[0]);
+    } else {
+      setFiltroDataInicio("");
+      setFiltroDataFim("");
+    }
+  };
 
   const turmasFiltradas = useMemo(() => {
     if (!filtroCurso) return turmas;
@@ -86,7 +111,6 @@ export default function RelatoriosClient({
 
       if (filtroCurso) query = query.eq("curso_id", filtroCurso);
       if (filtroTurma) query = query.eq("turma_id", filtroTurma);
-      if (filtroOperador) query = query.eq("operador_id", filtroOperador);
       if (filtroDataInicio) query = query.gte("data_hora", `${filtroDataInicio}T00:00:00.000Z`);
       if (filtroDataFim) query = query.lte("data_hora", `${filtroDataFim}T23:59:59.999Z`);
 
@@ -100,19 +124,7 @@ export default function RelatoriosClient({
 
       let resultados = (data || []) as unknown as PresencaRelatorio[];
 
-      if (filtroNome.trim()) {
-        const termo = filtroNome.toLowerCase();
-        resultados = resultados.filter((p) =>
-          p.alunos?.nome_completo?.toLowerCase().includes(termo)
-        );
-      }
 
-      if (filtroCpf.trim()) {
-        const cpfLimpo = filtroCpf.replace(/\D/g, "");
-        resultados = resultados.filter((p) =>
-          p.alunos?.cpf?.replace(/\D/g, "").includes(cpfLimpo)
-        );
-      }
 
       setPresencas(resultados);
     } catch (err: any) {
@@ -123,13 +135,11 @@ export default function RelatoriosClient({
   };
 
   const limparFiltros = () => {
-    setFiltroCpf("");
-    setFiltroNome("");
     setFiltroCurso("");
     setFiltroTurma("");
-    setFiltroOperador("");
     setFiltroDataInicio("");
     setFiltroDataFim("");
+    setFiltroPeriodo("");
     setPresencas([]);
     setBuscou(false);
   };
@@ -225,27 +235,6 @@ export default function RelatoriosClient({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Participante</label>
-            <input
-              type="text"
-              value={filtroNome}
-              onChange={(e) => setFiltroNome(e.target.value)}
-              placeholder="Nome do participante..."
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">CPF</label>
-            <input
-              type="text"
-              value={filtroCpf}
-              onChange={(e) => setFiltroCpf(e.target.value)}
-              placeholder="CPF do participante..."
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-            />
-          </div>
 
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Curso</label>
@@ -276,16 +265,16 @@ export default function RelatoriosClient({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Operador</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Período Rápido</label>
             <select
-              value={filtroOperador}
-              onChange={(e) => setFiltroOperador(e.target.value)}
+              value={filtroPeriodo}
+              onChange={handlePeriodoChange}
               className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
             >
-              <option value="">Todos os operadores</option>
-              {operadores.map((op) => (
-                <option key={op.id} value={op.id}>{op.nome}</option>
-              ))}
+              <option value="">Personalizado / Todos</option>
+              <option value="diario">Diário (Hoje)</option>
+              <option value="semanal">Semanal (Últimos 7 dias)</option>
+              <option value="mensal">Mensal (Últimos 30 dias)</option>
             </select>
           </div>
 
@@ -295,7 +284,7 @@ export default function RelatoriosClient({
               <input
                 type="date"
                 value={filtroDataInicio}
-                onChange={(e) => setFiltroDataInicio(e.target.value)}
+                onChange={(e) => { setFiltroDataInicio(e.target.value); setFiltroPeriodo(""); }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
               />
             </div>
@@ -304,7 +293,7 @@ export default function RelatoriosClient({
               <input
                 type="date"
                 value={filtroDataFim}
-                onChange={(e) => setFiltroDataFim(e.target.value)}
+                onChange={(e) => { setFiltroDataFim(e.target.value); setFiltroPeriodo(""); }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
               />
             </div>
