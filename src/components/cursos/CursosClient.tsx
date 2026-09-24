@@ -30,10 +30,19 @@ const DIAS_SEMANA = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
 const LIMITE_VAGAS = 10;
 const TURNOS = ["Manhã", "Tarde"];
 const HORARIOS = [
+  // Horários existentes
   { turno: "Manhã", label: "08:30 - 10:00", inicio: "08:30", fim: "10:00" },
   { turno: "Manhã", label: "10:00 - 11:30", inicio: "10:00", fim: "11:30" },
   { turno: "Tarde", label: "14:30 - 16:00", inicio: "14:30", fim: "16:00" },
   { turno: "Tarde", label: "16:00 - 17:30", inicio: "16:00", fim: "17:30" },
+
+  // Novos horários
+  { turno: "Manhã", label: "08:30 - 09:30", inicio: "08:30", fim: "09:30" },
+  { turno: "Manhã", label: "09:30 - 10:30", inicio: "09:30", fim: "10:30" },
+  { turno: "Manhã", label: "10:30 - 11:30", inicio: "10:30", fim: "11:30" },
+  { turno: "Tarde", label: "14:30 - 15:30", inicio: "14:30", fim: "15:30" },
+  { turno: "Tarde", label: "15:30 - 16:30", inicio: "15:30", fim: "16:30" },
+  { turno: "Tarde", label: "16:30 - 17:30", inicio: "16:30", fim: "17:30" },
 ] as const;
 
 function getHorarioByLabel(label: string) {
@@ -56,12 +65,29 @@ function getHorarioLabel(turma: Turma) {
     }).format(data);
     
     if (turma.turno === "Manhã") {
-      if (horaBrasil === "08:30") return "08:30 - 10:00";
-      if (horaBrasil === "10:00") return "10:00 - 11:30";
+      if (horaBrasil === "08:30") {
+        // Se o horário salvo existir no banco, ele tem prioridade.
+        if (turma.horario) return turma.horario;
+        return "08:30 - 10:00";
+      }
+      if (horaBrasil === "09:30") return "09:30 - 10:30";
+      if (horaBrasil === "10:00") {
+        if (turma.horario) return turma.horario;
+        return "10:00 - 11:30";
+      }
+      if (horaBrasil === "10:30") return "10:30 - 11:30";
     }
     if (turma.turno === "Tarde") {
-      if (horaBrasil === "14:30") return "14:30 - 16:00";
-      if (horaBrasil === "16:00") return "16:00 - 17:30";
+      if (horaBrasil === "14:30") {
+        if (turma.horario) return turma.horario;
+        return "14:30 - 16:00";
+      }
+      if (horaBrasil === "15:30") return "15:30 - 16:30";
+      if (horaBrasil === "16:00") {
+        if (turma.horario) return turma.horario;
+        return "16:00 - 17:30";
+      }
+      if (horaBrasil === "16:30") return "16:30 - 17:30";
     }
   }
   return turma.turno === "Manhã" ? "08:30 - 10:00" : "14:30 - 16:00";
