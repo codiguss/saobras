@@ -14,10 +14,10 @@ import {
   X,
   Save,
   Clock,
-  ChevronRight,
   CalendarDays,
   Filter,
   RotateCcw,
+  ChevronLeft,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -43,6 +43,37 @@ type Aluno = {
 type PresencaState = {
   presente: boolean;
   presencaIdNoBanco: string | null;
+  chamadaAlunoId: string | null;
+};
+
+type ChamadaResumo = {
+  id: string;
+  data: string;
+  total: number;
+  presentes: number;
+  faltas: number;
+};
+
+// Converte o dia escolhido no calendário em um intervalo local,
+// evitando que a consulta UTC "ande" para o dia anterior/seguinte.
+const getIntervaloDoDia = (data: string) => {
+  const inicio = new Date(`${data}T00:00:00`);
+  const fim = new Date(inicio);
+  fim.setDate(fim.getDate() + 1);
+
+  return {
+    inicio: inicio.toISOString(),
+    fim: fim.toISOString(),
+  };
+};
+
+const getDataHoraDaChamada = (data: string) => {
+  const agora = new Date();
+  const horario = `${String(agora.getHours()).padStart(2, "0")}:${String(
+    agora.getMinutes()
+  ).padStart(2, "0")}:${String(agora.getSeconds()).padStart(2, "0")}`;
+
+  return new Date(`${data}T${horario}`).toISOString();
 };
 
 export default function FormCheckin() {
@@ -78,6 +109,8 @@ export default function FormCheckin() {
   const [frequencia, setFrequencia] = useState<
     Record<string, PresencaState>
   >({});
+  const [historicoChamadas, setHistoricoChamadas] = useState<ChamadaResumo[]>([]);
+  const [isLoadingHistorico, setIsLoadingHistorico] = useState(false);
 
   // ==========================================================
   // TURMA SELECIONADA
@@ -252,53 +285,53 @@ export default function FormCheckin() {
         );
 
         // ======================================================
-        // 3. BUSCAR PRESENÇAS DO DIA
+        // 3. BUSCAR A CHAMADA DO DIA
         // ======================================================
 
-        const dataFiltroInicio =
-          `${dataSelecionada}T00:00:00.000Z`;
-
-        const dataFiltroFim =
-          `${dataSelecionada}T23:59:59.999Z`;
-
-        const {
-          data: presencasData,
-          error: presencasError,
-        } = await supabase
-          .from("presencas")
-          .select("id, aluno_id")
+        const { data: chamadaData, error: chamadaError } = await supabase
+          .from("chamadas")
+          .select("id, data, chamada_alunos(id, aluno_id, status)")
           .eq("turma_id", turmaSelecionadaId)
-          .gte("data_hora", dataFiltroInicio)
-          .lte("data_hora", dataFiltroFim);
+          .eq("data", dataSelecionada)
+          .maybeSingle();
 
-        if (presencasError) {
-          throw presencasError;
-        }
+        if (chamadaError) throw chamadaError;
 
         // ======================================================
         // 4. MONTAR FREQUÊNCIA
         // ======================================================
 
-        const freqInicial: Record<
-          string,
-          PresencaState
-        > = {};
-
+        const freqInicial: Record<string, PresencaState> = {};
         alunoIds.forEach((id) => {
-          freqInicial[id] = {
-            presente: false,
-            presencaIdNoBanco: null,
-          };
+          freqInicial[id] = { presente: false, presencaIdNoBanco: null, chamadaAlunoId: null };
         });
 
-        (presencasData || []).forEach((p) => {
-          if (freqInicial[p.aluno_id]) {
-            freqInicial[p.aluno_id] = {
-              presente: true,
-              presencaIdNoBanco: p.id,
-            };
-          }
-        });
+        if (chamadaData) {
+          const registros = Array.isArray(chamadaData.chamada_alunos) ? chamadaData.chamada_alunos : [];
+          registros.forEach((registro: any) => {
+            if (freqInicial[registro.aluno_id]) {
+              freqInicial[registro.aluno_id] = {
+                presente: registro.status === "presente",
+                presencaIdNoBanco: null,
+                chamadaAlunoId: registro.id,
+              };
+            }
+          });
+        } else {
+          const { inicio, fim } = getIntervaloDoDia(dataSelecionada);
+          const { data: presencasAntigas, error: presencasAntigasError } = await supabase
+            .from("presencas")
+            .select("id, aluno_id")
+            .eq("turma_id", turmaSelecionadaId)
+            .gte("data_hora", inicio)
+            .lt("data_hora", fim);
+          if (presencasAntigasError) throw presencasAntigasError;
+          (presencasAntigas || []).forEach((p) => {
+            if (freqInicial[p.aluno_id]) {
+              freqInicial[p.aluno_id] = { presente: true, presencaIdNoBanco: p.id, chamadaAlunoId: null };
+            }
+          });
+        }
 
         setFrequencia(freqInicial);
       } catch (error: any) {
@@ -407,127 +440,76 @@ export default function FormCheckin() {
     return op.id;
   };
 
+  const carregarHistoricoChamadas = async () => {
+    if (!turmaSelecionadaId) { setHistoricoChamadas([]); return; }
+    setIsLoadingHistorico(true);
+    try {
+      const { data, error } = await supabase
+        .from("chamadas")
+        .select("id, data, chamada_alunos(status)")
+        .eq("turma_id", turmaSelecionadaId)
+        .order("data", { ascending: false });
+      if (error) throw error;
+      setHistoricoChamadas((data || []).map((chamada: any) => {
+        const registros = Array.isArray(chamada.chamada_alunos) ? chamada.chamada_alunos : [];
+        const presentes = registros.filter((r: any) => r.status === "presente").length;
+        const faltas = registros.filter((r: any) => r.status === "falta").length;
+        return { id: chamada.id, data: chamada.data, total: registros.length, presentes, faltas };
+      }));
+    } catch (error) {
+      console.error("Erro ao carregar histórico de chamadas:", error);
+      setHistoricoChamadas([]);
+    } finally { setIsLoadingHistorico(false); }
+  };
+
   // ==========================================================
-  // SALVAR FREQUÊNCIA
+  // SALVAR CHAMADA
   // ==========================================================
 
   const handleSalvar = async () => {
-    if (
-      !turmaSelecionadaId ||
-      alunos.length === 0
-    ) {
-      return;
-    }
-
-    setIsSaving(true);
-    setErro("");
-    setSucesso("");
-
+    if (!turmaSelecionadaId || alunos.length === 0) return;
+    setIsSaving(true); setErro(""); setSucesso("");
     try {
-      const operadorId =
-        await getOperadorId();
-
-      const insercoes: any[] = [];
-      const exclusoes: string[] = [];
-
-      const dataHoraRegistro =
-        new Date().toISOString();
-
-      Object.entries(frequencia).forEach(
-        ([alunoId, state]) => {
-          if (
-            state.presente &&
-            !state.presencaIdNoBanco
-          ) {
-            insercoes.push({
-              aluno_id: alunoId,
-              curso_id:
-                turmaSelecionada?.curso_id,
-              turma_id:
-                turmaSelecionadaId,
-              operador_id: operadorId,
-              metodo: "manual",
-              data_hora:
-                dataHoraRegistro,
-            });
-          }
-
-          if (
-            !state.presente &&
-            state.presencaIdNoBanco
-          ) {
-            exclusoes.push(
-              state.presencaIdNoBanco
-            );
-          }
-        }
-      );
-
-      if (
-        insercoes.length === 0 &&
-        exclusoes.length === 0
-      ) {
-        setSucesso(
-          "Nenhuma alteração de frequência detectada."
-        );
-
-        return;
+      const operadorId = await getOperadorId();
+      const { data: chamadaExistente, error: buscaChamadaError } = await supabase
+        .from("chamadas").select("id").eq("turma_id", turmaSelecionadaId).eq("data", dataSelecionada).maybeSingle();
+      if (buscaChamadaError) throw buscaChamadaError;
+      let chamadaId = chamadaExistente?.id as string | undefined;
+      if (!chamadaId) {
+        const { data: novaChamada, error } = await supabase.from("chamadas").insert({
+          turma_id: turmaSelecionadaId, curso_id: turmaSelecionada?.curso_id, data: dataSelecionada, operador_id: operadorId,
+        }).select("id").single();
+        if (error) throw error; chamadaId = novaChamada.id;
+      } else {
+        const { error } = await supabase.from("chamadas").update({ operador_id: operadorId, atualizado_em: new Date().toISOString() }).eq("id", chamadaId);
+        if (error) throw error;
       }
+      const registros = alunos.map((aluno) => ({ chamada_id: chamadaId, aluno_id: aluno.id, status: frequencia[aluno.id]?.presente ? "presente" : "falta" }));
+      const { error: upsertError } = await supabase.from("chamada_alunos").upsert(registros, { onConflict: "chamada_id,aluno_id" });
+      if (upsertError) throw upsertError;
 
-      if (exclusoes.length > 0) {
-        const {
-          error: deleteError,
-        } = await supabase
-          .from("presencas")
-          .delete()
-          .in("id", exclusoes);
-
-        if (deleteError) {
-          throw deleteError;
-        }
+      const { inicio, fim } = getIntervaloDoDia(dataSelecionada);
+      await supabase.from("presencas").delete().eq("turma_id", turmaSelecionadaId).gte("data_hora", inicio).lt("data_hora", fim);
+      const presentes = alunos.filter((aluno) => frequencia[aluno.id]?.presente);
+      if (presentes.length > 0) {
+        const dataHoraRegistro = getDataHoraDaChamada(dataSelecionada);
+        const { error } = await supabase.from("presencas").insert(presentes.map((aluno) => ({
+          aluno_id: aluno.id, curso_id: turmaSelecionada?.curso_id, turma_id: turmaSelecionadaId, operador_id: operadorId, metodo: "manual", data_hora: dataHoraRegistro,
+        })));
+        if (error) console.warn("Chamada salva, mas presencas não sincronizadas:", error);
       }
-
-      if (insercoes.length > 0) {
-        const {
-          error: insertError,
-        } = await supabase
-          .from("presencas")
-          .insert(insercoes);
-
-        if (insertError) {
-          throw insertError;
-        }
-      }
-
-      setSucesso(
-        "Frequência salva com sucesso!"
-      );
-
-      const idTurmaAtual =
-        turmaSelecionadaId;
-
-      setTurmaSelecionadaId("");
-
-      setTimeout(() => {
-        setTurmaSelecionadaId(
-          idTurmaAtual
-        );
-      }, 100);
+      setSucesso(`Chamada de ${new Date(`${dataSelecionada}T12:00:00`).toLocaleDateString("pt-BR")} salva: ${presentes.length} presença(s) e ${alunos.length - presentes.length} falta(s).`);
+      await carregarHistoricoChamadas();
     } catch (error: any) {
-      console.error(
-        "Erro ao salvar frequência:",
-        error
-      );
-
-      setErro(
-        "Falha ao salvar a chamada: " +
-          (error?.message ||
-            "Erro desconhecido.")
-      );
-    } finally {
-      setIsSaving(false);
-    }
+      console.error("Erro ao salvar chamada:", error);
+      setErro("Falha ao salvar a chamada: " + (error?.message || "Erro desconhecido."));
+    } finally { setIsSaving(false); }
   };
+
+  useEffect(() => {
+    if (turmaSelecionadaId) carregarHistoricoChamadas();
+    else setHistoricoChamadas([]);
+  }, [turmaSelecionadaId]);
 
   // ==========================================================
   // FILTRO DE ALUNOS
@@ -673,9 +655,6 @@ export default function FormCheckin() {
     Object.values(frequencia).filter(
       (f) => f.presente
     ).length;
-
-  const qtdFaltas =
-    alunos.length - qtdPresentes;
 
   // ==========================================================
   // DATA FORMATADA
@@ -984,6 +963,10 @@ export default function FormCheckin() {
                 className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               />
 
+            </div>
+            <div className="flex gap-2 mt-2">
+              <button type="button" onClick={() => { const d = new Date(`${dataSelecionada}T12:00:00`); d.setDate(d.getDate() - 1); setDataSelecionada(d.toISOString().split("T")[0]); }} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-1"><ChevronLeft className="w-4 h-4" /> Dia anterior</button>
+              <button type="button" onClick={() => { const d = new Date(`${dataSelecionada}T12:00:00`); d.setDate(d.getDate() + 1); setDataSelecionada(d.toISOString().split("T")[0]); }} className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-1">Próximo dia <ChevronRight className="w-4 h-4" /></button>
             </div>
 
           </div>
@@ -1647,34 +1630,44 @@ export default function FormCheckin() {
                 </div>
 
                 <div className="rounded-xl bg-red-50 border border-red-100 p-4">
-
                   <div className="flex items-center gap-3">
-
                     <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
-
                       <UserX className="w-5 h-5 text-red-600" />
-
                     </div>
-
                     <div>
-
-                      <p className="text-xs font-bold text-red-600">
-                        FALTAS
-                      </p>
-
-                      <p className="text-xl font-bold text-slate-900">
-                        {qtdFaltas}
-                      </p>
-
+                      <p className="text-xs font-bold text-red-600">FALTAS</p>
+                      <p className="text-xl font-bold text-slate-900">{alunos.length - qtdPresentes}</p>
                     </div>
-
                   </div>
-
                 </div>
 
               </div>
             )}
 
+          </div>
+
+          {/* HISTÓRICO DE CHAMADAS */}
+          <div className="px-6 pt-6">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <div>
+                  <h3 className="font-bold text-slate-900">Histórico desta turma</h3>
+                  <p className="text-xs text-slate-500">Clique em uma data para voltar àquela chamada.</p>
+                </div>
+                {isLoadingHistorico && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {historicoChamadas.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-2">Nenhuma chamada salva ainda.</p>
+                ) : historicoChamadas.map((chamada) => (
+                  <button key={chamada.id} type="button" onClick={() => setDataSelecionada(chamada.data)}
+                    className={`shrink-0 rounded-xl border px-4 py-3 text-left transition ${chamada.data === dataSelecionada ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-300"}`}>
+                    <p className="text-sm font-bold text-slate-900">{new Date(`${chamada.data}T12:00:00`).toLocaleDateString("pt-BR")}</p>
+                    <p className="text-xs mt-1"><span className="text-emerald-700 font-semibold">{chamada.presentes} pres.</span><span className="text-slate-400 mx-1">•</span><span className="text-red-600 font-semibold">{chamada.faltas} falt.</span></p>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* ALUNOS */}
@@ -1687,8 +1680,7 @@ export default function FormCheckin() {
                 <Loader2 className="w-9 h-9 animate-spin mb-4 text-blue-500" />
 
                 <p>
-                  Buscando lista de alunos
-                  e histórico do dia...
+                  Buscando lista de alunos e presenças do dia...
                 </p>
 
               </div>
@@ -1755,17 +1747,6 @@ export default function FormCheckin() {
                     Todos presentes
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      marcarTodos(false)
-                    }
-                    className="px-4 py-3 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 font-semibold text-sm rounded-xl flex items-center justify-center gap-2"
-                  >
-                    <X className="w-4 h-4" />
-                    Todos faltaram
-                  </button>
-
                 </div>
 
                 {/* LISTA */}
@@ -1796,8 +1777,8 @@ export default function FormCheckin() {
                           false;
 
                         const salvo =
-                          state?.presencaIdNoBanco !==
-                          null;
+                          state?.chamadaAlunoId !== null ||
+                          state?.presencaIdNoBanco !== null;
 
                         return (
                           <button
@@ -1811,7 +1792,7 @@ export default function FormCheckin() {
                             className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${
                               presente
                                 ? "bg-emerald-50 border-emerald-500 shadow-sm"
-                                : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                : "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100"
                             }`}
                           >
 
@@ -1844,23 +1825,9 @@ export default function FormCheckin() {
                                   }
                                 </p>
 
-                                <p
-                                  className={`text-xs font-medium mt-1 ${
-                                    presente
-                                      ? "text-emerald-700"
-                                      : "text-slate-500"
-                                  }`}
-                                >
-                                  {presente
-                                    ? "Presente"
-                                    : "Falta"}
-
-                                  {salvo &&
-                                    presente && (
-                                      <span className="ml-1 opacity-70">
-                                        • Salvo
-                                      </span>
-                                    )}
+                                <p className={`text-xs font-medium mt-1 ${presente ? "text-emerald-700" : "text-red-600"}`}>
+                                  {presente ? "Presente" : "Falta"}
+                                  {salvo && <span className="ml-1 opacity-70">• Salvo</span>}
                                 </p>
 
                               </div>
@@ -1873,12 +1840,14 @@ export default function FormCheckin() {
                                 className={`w-7 h-7 rounded-lg flex items-center justify-center border-2 ${
                                   presente
                                     ? "bg-emerald-500 border-emerald-500"
-                                    : "bg-white border-slate-300"
+                                    : "bg-red-100 border-red-300"
                                 }`}
                               >
 
-                                {presente && (
+                                {presente ? (
                                   <Check className="w-4 h-4 text-white" />
+                                ) : (
+                                  <X className="w-4 h-4 text-red-500" />
                                 )}
 
                               </div>
@@ -1947,4 +1916,3 @@ export default function FormCheckin() {
     </div>
   );
 }
-
