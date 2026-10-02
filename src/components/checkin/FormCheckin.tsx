@@ -2,23 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
-  CalendarDays,
   Check,
-  CheckCircle2,
-  ChevronRight,
-  Clock,
-  Filter,
   Loader2,
-  RotateCcw,
+  Users,
+  AlertCircle,
+  Calendar as CalendarIcon,
   Search,
-  Save,
+  BookOpen,
   UserCheck,
   UserX,
-  Users,
-  XCircle,
+  X,
+  Save,
+  Clock,
+  ChevronRight,
+  CalendarDays,
+  Filter,
+  RotateCcw,
 } from "lucide-react";
-
 import { supabase } from "@/lib/supabase";
 
 type Curso = {
@@ -40,68 +40,32 @@ type Aluno = {
   nome_completo: string;
 };
 
-type RegistroFrequencia = {
-  alunoId: string;
+type PresencaState = {
   presente: boolean;
-  registroId: string | null;
+  presencaIdNoBanco: string | null;
 };
 
-function getDataHoje() {
-  const agora = new Date();
-
-  const ano = agora.getFullYear();
-  const mes = String(agora.getMonth() + 1).padStart(2, "0");
-  const dia = String(agora.getDate()).padStart(2, "0");
-
-  return `${ano}-${mes}-${dia}`;
-}
-
-function criarInicioDoDia(data: string) {
-  return new Date(`${data}T00:00:00`);
-}
-
-function criarFimDoDia(data: string) {
-  return new Date(`${data}T23:59:59.999`);
-}
-
-function criarDataRegistro(data: string) {
-  /*
-   * Meio-dia evita problemas de mudança de fuso horário.
-   * A data escolhida continua sendo a data da chamada.
-   */
-  return new Date(`${data}T12:00:00`).toISOString();
-}
-
-function formatarData(data: string) {
-  if (!data) return "";
-
-  const partes = data.split("-");
-
-  if (partes.length !== 3) {
-    return data;
-  }
-
-  return `${partes[2]}/${partes[1]}/${partes[0]}`;
-}
-
 export default function FormCheckin() {
-  // ==========================================================
-  // DADOS
-  // ==========================================================
-
   const [cursos, setCursos] = useState<Curso[]>([]);
   const [turmas, setTurmas] = useState<Turma[]>([]);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
 
-  // ==========================================================
-  // SELEÇÃO
-  // ==========================================================
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
+  const [isLoadingAlunos, setIsLoadingAlunos] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [dataSelecionada, setDataSelecionada] =
-    useState(getDataHoje());
+  const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
 
-  const [turmaSelecionadaId, setTurmaSelecionadaId] =
-    useState("");
+  const [dataSelecionada, setDataSelecionada] = useState(() => {
+    const hoje = new Date();
+    hoje.setMinutes(hoje.getMinutes() - hoje.getTimezoneOffset());
+    return hoje.toISOString().split("T")[0];
+  });
+
+  const [turmaSelecionadaId, setTurmaSelecionadaId] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [buscaTurma, setBuscaTurma] = useState("");
 
   // ==========================================================
   // FILTROS
@@ -109,51 +73,25 @@ export default function FormCheckin() {
 
   const [filtroCurso, setFiltroCurso] = useState("");
   const [filtroTurno, setFiltroTurno] = useState("");
-  const [buscaTurma, setBuscaTurma] = useState("");
-  const [buscaAluno, setBuscaAluno] = useState("");
-
-  // ==========================================================
-  // FREQUÊNCIA
-  // ==========================================================
+  const [filtroTurma, setFiltroTurma] = useState("");
 
   const [frequencia, setFrequencia] = useState<
-    Record<string, RegistroFrequencia>
+    Record<string, PresencaState>
   >({});
-
-  // ==========================================================
-  // ESTADOS
-  // ==========================================================
-
-  const [carregandoBase, setCarregandoBase] =
-    useState(true);
-
-  const [carregandoAlunos, setCarregandoAlunos] =
-    useState(false);
-
-  const [salvando, setSalvando] =
-    useState(false);
-
-  const [erro, setErro] = useState("");
-  const [sucesso, setSucesso] = useState("");
 
   // ==========================================================
   // TURMA SELECIONADA
   // ==========================================================
 
   const turmaSelecionada = useMemo(() => {
-    return turmas.find(
-      (turma) => turma.id === turmaSelecionadaId
-    );
+    return turmas.find((t) => t.id === turmaSelecionadaId);
   }, [turmas, turmaSelecionadaId]);
 
-  const cursoSelecionado = useMemo(() => {
-    if (!turmaSelecionada) {
-      return undefined;
-    }
+  const cursoDaTurma = useMemo(() => {
+    if (!turmaSelecionada) return undefined;
 
     return cursos.find(
-      (curso) =>
-        curso.id === turmaSelecionada.curso_id
+      (c) => c.id === turmaSelecionada.curso_id
     );
   }, [cursos, turmaSelecionada]);
 
@@ -162,110 +100,129 @@ export default function FormCheckin() {
   // ==========================================================
 
   useEffect(() => {
-    async function carregarBase() {
-      setCarregandoBase(true);
+    const carregarDadosBase = async () => {
+      setIsLoadingInitial(true);
       setErro("");
 
       try {
-        const [cursosResponse, turmasResponse] =
-          await Promise.all([
-            supabase
-              .from("cursos")
-              .select("id, titulo")
-              .order("titulo"),
+        const [resCursos, resTurmas] = await Promise.all([
+          supabase
+            .from("cursos")
+            .select("id, titulo")
+            .order("titulo"),
 
-            supabase
-              .from("turmas")
-              .select(
-                "id, nome, curso_id, turno, horario, dias_semana"
-              )
-              .order("nome"),
-          ]);
+          supabase
+            .from("turmas")
+            .select(
+              "id, nome, curso_id, turno, horario, dias_semana"
+            )
+            .order("nome"),
+        ]);
 
-        if (cursosResponse.error) {
-          throw new Error(
-            `Erro ao carregar cursos: ${cursosResponse.error.message}`
+        if (resCursos.error) {
+          console.error(
+            "Erro ao carregar cursos:",
+            resCursos.error
+          );
+
+          setErro(
+            "Erro ao carregar os cursos: " +
+              resCursos.error.message
           );
         }
 
-        if (turmasResponse.error) {
-          throw new Error(
-            `Erro ao carregar turmas: ${turmasResponse.error.message}`
+        if (resTurmas.error) {
+          console.error(
+            "Erro ao carregar turmas:",
+            resTurmas.error
+          );
+
+          setErro(
+            "Erro ao carregar as turmas: " +
+              resTurmas.error.message
           );
         }
 
         setCursos(
-          (cursosResponse.data || []) as Curso[]
+          (resCursos.data || []) as Curso[]
         );
 
         setTurmas(
-          (turmasResponse.data || []) as Turma[]
+          (resTurmas.data || []) as Turma[]
+        );
+
+        console.log(
+          "Cursos carregados:",
+          resCursos.data
+        );
+
+        console.log(
+          "Turmas carregadas:",
+          resTurmas.data
         );
       } catch (error: any) {
-        console.error(error);
+        console.error(
+          "Erro geral ao carregar dados:",
+          error
+        );
 
         setErro(
-          error?.message ||
-            "Não foi possível carregar os dados."
+          "Não foi possível carregar as turmas: " +
+            (error?.message || "Erro desconhecido.")
         );
       } finally {
-        setCarregandoBase(false);
+        setIsLoadingInitial(false);
       }
-    }
+    };
 
-    carregarBase();
+    carregarDadosBase();
   }, []);
 
   // ==========================================================
-  // CARREGAR ALUNOS DA TURMA
+  // CARREGAR ALUNOS E PRESENÇAS
   // ==========================================================
 
   useEffect(() => {
-    if (
-      !turmaSelecionadaId ||
-      !dataSelecionada
-    ) {
+    if (!turmaSelecionadaId || !dataSelecionada) {
       setAlunos([]);
       setFrequencia({});
       return;
     }
 
-    async function carregarChamada() {
-      setCarregandoAlunos(true);
+    const carregarTurmaAtual = async () => {
+      setIsLoadingAlunos(true);
       setErro("");
       setSucesso("");
+      setFrequencia({});
 
       try {
-        // ------------------------------------------------------
-        // 1. MATRÍCULAS
-        // ------------------------------------------------------
+        // ======================================================
+        // 1. BUSCAR MATRÍCULAS DA TURMA
+        // ======================================================
 
         const {
           data: matriculas,
-          error: erroMatriculas,
+          error: matriculasError,
         } = await supabase
           .from("matriculas")
           .select("aluno_id")
-          .eq(
-            "turma_id",
-            turmaSelecionadaId
-          );
+          .eq("turma_id", turmaSelecionadaId);
 
-        if (erroMatriculas) {
-          throw erroMatriculas;
+        if (matriculasError) {
+          throw matriculasError;
         }
 
         const alunoIds = Array.from(
           new Set(
             (matriculas || [])
-              .map((item) => item.aluno_id)
+              .map((m) => m.aluno_id)
               .filter(Boolean)
           )
         );
 
-        // ------------------------------------------------------
-        // SEM ALUNOS
-        // ------------------------------------------------------
+        // ======================================================
+        // SE NÃO EXISTIR ALUNO
+        // ======================================================
 
         if (alunoIds.length === 0) {
           setAlunos([]);
@@ -273,150 +230,329 @@ export default function FormCheckin() {
           return;
         }
 
-        // ------------------------------------------------------
-        // 2. ALUNOS
-        // ------------------------------------------------------
+        // ======================================================
+        // 2. BUSCAR ALUNOS
+        // ======================================================
 
         const {
           data: alunosData,
-          error: erroAlunos,
+          error: alunosError,
         } = await supabase
           .from("alunos")
-          .select(
-            "id, nome_completo"
-          )
+          .select("id, nome_completo")
           .in("id", alunoIds)
           .order("nome_completo");
 
-        if (erroAlunos) {
-          throw erroAlunos;
+        if (alunosError) {
+          throw alunosError;
         }
 
-        const alunosCarregados =
-          (alunosData || []) as Aluno[];
+        setAlunos(
+          (alunosData || []) as Aluno[]
+        );
 
-        setAlunos(alunosCarregados);
+        // ======================================================
+        // 3. BUSCAR PRESENÇAS DO DIA
+        // ======================================================
 
-        // ------------------------------------------------------
-        // 3. BUSCAR A CHAMADA DA DATA
-        // ------------------------------------------------------
-
-        const inicio =
-          criarInicioDoDia(dataSelecionada).toISOString();
-
-        const fim =
-          criarFimDoDia(dataSelecionada).toISOString();
+        // Usa o início e o fim do dia no fuso local do navegador,
+        // convertendo-os para ISO antes de consultar o Supabase.
+        const inicioDia = new Date(`${dataSelecionada}T00:00:00`);
+        const fimDia = new Date(`${dataSelecionada}T23:59:59.999`);
+        const dataFiltroInicio = inicioDia.toISOString();
+        const dataFiltroFim = fimDia.toISOString();
 
         const {
-          data: registros,
-          error: erroRegistros,
+          data: presencasData,
+          error: presencasError,
         } = await supabase
           .from("presencas")
-          .select(
-            "id, aluno_id, status, data_hora"
-          )
-          .eq(
-            "turma_id",
-            turmaSelecionadaId
-          )
-          .gte("data_hora", inicio)
-          .lte("data_hora", fim)
-          .order("data_hora", {
-            ascending: false,
-          });
+          .select("id, aluno_id, status")
+          .eq("turma_id", turmaSelecionadaId)
+          .gte("data_hora", dataFiltroInicio)
+          .lte("data_hora", dataFiltroFim);
 
-        if (erroRegistros) {
-          throw erroRegistros;
+        if (presencasError) {
+          throw presencasError;
         }
 
-        // ------------------------------------------------------
-        // 4. MONTAR ESTADO DA CHAMADA
-        // ------------------------------------------------------
+        // ======================================================
+        // 4. MONTAR FREQUÊNCIA
+        // ======================================================
 
-        const novaFrequencia: Record<
+        const freqInicial: Record<
           string,
-          RegistroFrequencia
+          PresencaState
         > = {};
 
-        for (const aluno of alunosCarregados) {
-          novaFrequencia[aluno.id] = {
-            alunoId: aluno.id,
+        alunoIds.forEach((id) => {
+          freqInicial[id] = {
             presente: false,
-            registroId: null,
+            presencaIdNoBanco: null,
           };
-        }
+        });
 
-        /*
-         * Caso existam registros duplicados antigos,
-         * usamos o registro mais recente.
-         */
-
-        for (const registro of registros || []) {
-          if (!novaFrequencia[registro.aluno_id]) {
-            continue;
+        (presencasData || []).forEach((p) => {
+          if (freqInicial[p.aluno_id]) {
+            freqInicial[p.aluno_id] = {
+              presente: p.status !== "falta",
+              presencaIdNoBanco: p.id,
+            };
           }
+        });
 
-          if (
-            novaFrequencia[registro.aluno_id]
-              .registroId !== null
-          ) {
-            continue;
-          }
-
-          novaFrequencia[
-            registro.aluno_id
-          ] = {
-            alunoId: registro.aluno_id,
-            presente:
-              registro.status !== "falta",
-            registroId: registro.id,
-          };
-        }
-
-        setFrequencia(novaFrequencia);
+        setFrequencia(freqInicial);
       } catch (error: any) {
         console.error(
-          "Erro ao carregar chamada:",
+          "Erro ao carregar turma:",
           error
         );
 
         setErro(
-          error?.message ||
-            "Não foi possível carregar a chamada."
+          "Erro ao carregar os dados da turma: " +
+            (error?.message || "Erro desconhecido.")
         );
 
         setAlunos([]);
         setFrequencia({});
       } finally {
-        setCarregandoAlunos(false);
+        setIsLoadingAlunos(false);
+      }
+    };
+
+    carregarTurmaAtual();
+  }, [turmaSelecionadaId, dataSelecionada]);
+
+  // ==========================================================
+  // ALTERAR PRESENÇA
+  // ==========================================================
+
+  const togglePresenca = (alunoId: string) => {
+    setFrequencia((prev) => {
+      const atual = prev[alunoId];
+
+      if (!atual) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [alunoId]: {
+          ...atual,
+          presente: !atual.presente,
+        },
+      };
+    });
+
+    setSucesso("");
+  };
+
+  // ==========================================================
+  // MARCAR TODOS
+  // ==========================================================
+
+  const marcarTodos = (presente: boolean) => {
+    setFrequencia((prev) => {
+      const novo = { ...prev };
+
+      Object.keys(novo).forEach((id) => {
+        novo[id] = {
+          ...novo[id],
+          presente,
+        };
+      });
+
+      return novo;
+    });
+
+    setSucesso("");
+  };
+
+  // ==========================================================
+  // OPERADOR LOGADO
+  // ==========================================================
+
+  const getOperadorId = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user?.email) {
+      throw new Error(
+        "Usuário não autenticado."
+      );
+    }
+
+    const {
+      data: op,
+      error: opError,
+    } = await supabase
+      .from("operadores")
+      .select("id")
+      .eq("email", user.email)
+      .maybeSingle();
+
+    if (opError) {
+      throw new Error(
+        "Erro ao buscar operador: " +
+          opError.message
+      );
+    }
+
+    if (!op) {
+      throw new Error(
+        `Seu email (${user.email}) não está cadastrado na tabela de operadores.`
+      );
+    }
+
+    return op.id;
+  };
+
+  // ==========================================================
+  // SALVAR FREQUÊNCIA
+  // ==========================================================
+
+  const handleSalvar = async () => {
+    if (!turmaSelecionadaId || alunos.length === 0 || !dataSelecionada) return;
+
+    setIsSaving(true);
+    setErro("");
+    setSucesso("");
+
+    try {
+      const operadorId = await getOperadorId();
+      const registrosNovos: any[] = [];
+      // Guarda a data escolhida (não a data de hoje) no horário local.
+      const dataHoraRegistro = new Date(`${dataSelecionada}T12:00:00`).toISOString();
+
+      for (const [alunoId, state] of Object.entries(frequencia)) {
+        const status = state.presente ? "presente" : "falta";
+        const valores = {
+          aluno_id: alunoId,
+          curso_id: turmaSelecionada?.curso_id ?? null,
+          turma_id: turmaSelecionadaId,
+          operador_id: operadorId,
+          metodo: "manual",
+          data_hora: dataHoraRegistro,
+          status,
+        };
+
+        if (state.presencaIdNoBanco) {
+          const { error: updateError } = await supabase
+            .from("presencas")
+            .update({ status })
+            .eq("id", state.presencaIdNoBanco);
+
+          if (updateError) throw updateError;
+        } else {
+          registrosNovos.push(valores);
+        }
+      }
+
+      if (registrosNovos.length > 0) {
+        const { error: insertError } = await supabase.from("presencas").insert(registrosNovos);
+        if (insertError) throw insertError;
+      }
+
+      // Recarrega os dados mantendo a turma e a data selecionadas.
+      const { data: registrosSalvos, error: recarregarError } = await supabase
+        .from("presencas")
+        .select("id, aluno_id, status")
+        .eq("turma_id", turmaSelecionadaId)
+        .gte("data_hora", new Date(`${dataSelecionada}T00:00:00`).toISOString())
+        .lte("data_hora", new Date(`${dataSelecionada}T23:59:59.999`).toISOString());
+      if (recarregarError) throw recarregarError;
+
+      const atualizado: Record<string, PresencaState> = {};
+      for (const aluno of alunos) {
+        const registro = (registrosSalvos || []).find((r: any) => r.aluno_id === aluno.id);
+        atualizado[aluno.id] = {
+          presente: registro ? registro.status !== "falta" : false,
+          presencaIdNoBanco: registro?.id ?? null,
+        };
+      }
+      setFrequencia(atualizado);
+      setSucesso("Chamada salva com sucesso! Presenças e faltas foram registradas.");
+    } catch (error: any) {
+      console.error("Erro ao salvar frequência:", error);
+      setErro("Falha ao salvar a chamada: " + (error?.message || "Erro desconhecido."));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // ==========================================================
+  // FILTRO DE ALUNOS
+  // ==========================================================
+
+  const alunosFiltrados = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return alunos;
+    }
+
+    const termo =
+      searchTerm.toLowerCase();
+
+    return alunos.filter((aluno) =>
+      aluno.nome_completo
+        .toLowerCase()
+        .includes(termo)
+    );
+  }, [alunos, searchTerm]);
+
+  // ==========================================================
+  // TURNOS DISPONÍVEIS
+  // ==========================================================
+
+  const turnosDisponiveis = useMemo<string[]>(() => {
+    const turnos: string[] = [];
+
+    for (const turma of turmas) {
+      if (
+        typeof turma.turno === "string" &&
+        turma.turno.trim() !== ""
+      ) {
+        turnos.push(turma.turno);
       }
     }
 
-    carregarChamada();
+    return Array.from(new Set(turnos)).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [turmas]);
+
+  // ==========================================================
+  // TURMAS PARA O FILTRO
+  // ==========================================================
+
+  const turmasParaSelect = useMemo(() => {
+    return turmas.filter((turma) => {
+      const correspondeCurso =
+        !filtroCurso ||
+        turma.curso_id === filtroCurso;
+
+      const correspondeTurno =
+        !filtroTurno ||
+        turma.turno === filtroTurno;
+
+      return (
+        correspondeCurso &&
+        correspondeTurno
+      );
+    });
   }, [
-    turmaSelecionadaId,
-    dataSelecionada,
+    turmas,
+    filtroCurso,
+    filtroTurno,
   ]);
 
   // ==========================================================
   // TURMAS FILTRADAS
   // ==========================================================
 
-  const turnosDisponiveis = useMemo(() => {
-    return Array.from(
-      new Set(
-        turmas
-          .map((turma) => turma.turno)
-          .filter(Boolean)
-      )
-    ).sort();
-  }, [turmas]);
-
   const turmasFiltradas = useMemo(() => {
     const termo =
-      buscaTurma
-        .trim()
-        .toLowerCase();
+      buscaTurma.trim().toLowerCase();
 
     return turmas.filter((turma) => {
       if (
@@ -433,896 +569,464 @@ export default function FormCheckin() {
         return false;
       }
 
-      if (!termo) {
-        return true;
+      if (
+        filtroTurma &&
+        turma.id !== filtroTurma
+      ) {
+        return false;
       }
 
-      const curso =
-        cursos.find(
-          (item) =>
-            item.id === turma.curso_id
+      if (termo) {
+        const curso = cursos.find(
+          (c) =>
+            c.id === turma.curso_id
         );
 
-      const texto = [
-        turma.nome,
-        curso?.titulo || "",
-        turma.turno || "",
-        turma.horario || "",
-        ...(turma.dias_semana || []),
-      ]
-        .join(" ")
-        .toLowerCase();
+        const texto = [
+          turma.nome,
+          curso?.titulo || "",
+          turma.turno || "",
+          turma.horario || "",
+          ...(turma.dias_semana || []),
+        ]
+          .join(" ")
+          .toLowerCase();
 
-      return texto.includes(termo);
+        if (!texto.includes(termo)) {
+          return false;
+        }
+      }
+
+      return true;
     });
   }, [
     turmas,
     cursos,
+    buscaTurma,
     filtroCurso,
     filtroTurno,
-    buscaTurma,
+    filtroTurma,
   ]);
-
-  // ==========================================================
-  // ALUNOS FILTRADOS
-  // ==========================================================
-
-  const alunosFiltrados = useMemo(() => {
-    const termo =
-      buscaAluno
-        .trim()
-        .toLowerCase();
-
-    if (!termo) {
-      return alunos;
-    }
-
-    return alunos.filter((aluno) =>
-      aluno.nome_completo
-        .toLowerCase()
-        .includes(termo)
-    );
-  }, [alunos, buscaAluno]);
-
-  // ==========================================================
-  // CONTADORES
-  // ==========================================================
-
-  const totalAlunos = alunos.length;
-
-  const totalPresentes = alunos.filter(
-    (aluno) =>
-      frequencia[aluno.id]?.presente === true
-  ).length;
-
-  const totalFaltas =
-    totalAlunos - totalPresentes;
-
-  // ==========================================================
-  // MARCAR ALUNO
-  // ==========================================================
-
-  const marcarAluno = (
-    alunoId: string,
-    presente: boolean
-  ) => {
-    setFrequencia((atual) => ({
-      ...atual,
-      [alunoId]: {
-        alunoId,
-        presente,
-        registroId:
-          atual[alunoId]?.registroId || null,
-      },
-    }));
-
-    setSucesso("");
-  };
-
-  // ==========================================================
-  // MARCAR TODOS
-  // ==========================================================
-
-  const marcarTodos = (
-    presente: boolean
-  ) => {
-    setFrequencia((atual) => {
-      const nova = {
-        ...atual,
-      };
-
-      for (const aluno of alunos) {
-        nova[aluno.id] = {
-          alunoId: aluno.id,
-          presente,
-          registroId:
-            atual[aluno.id]?.registroId ||
-            null,
-        };
-      }
-
-      return nova;
-    });
-
-    setSucesso("");
-  };
-
-  // ==========================================================
-  // OPERADOR
-  // ==========================================================
-
-  async function buscarOperadorId() {
-    const {
-      data: sessionData,
-      error: sessionError,
-    } = await supabase.auth.getUser();
-
-    if (sessionError) {
-      throw sessionError;
-    }
-
-    const usuario =
-      sessionData.user;
-
-    if (!usuario?.email) {
-      throw new Error(
-        "Usuário não autenticado."
-      );
-    }
-
-    const {
-      data: operador,
-      error: operadorError,
-    } = await supabase
-      .from("operadores")
-      .select("id")
-      .eq("email", usuario.email)
-      .maybeSingle();
-
-    if (operadorError) {
-      throw operadorError;
-    }
-
-    if (!operador) {
-      throw new Error(
-        `O usuário ${usuario.email} não está cadastrado como operador.`
-      );
-    }
-
-    return operador.id;
-  }
-
-  // ==========================================================
-  // SALVAR CHAMADA
-  // ==========================================================
-
-  async function salvarChamada() {
-    if (!turmaSelecionadaId) {
-      setErro(
-        "Selecione uma turma."
-      );
-      return;
-    }
-
-    if (!dataSelecionada) {
-      setErro(
-        "Selecione a data da chamada."
-      );
-      return;
-    }
-
-    if (alunos.length === 0) {
-      setErro(
-        "Essa turma não possui alunos matriculados."
-      );
-      return;
-    }
-
-    setSalvando(true);
-    setErro("");
-    setSucesso("");
-
-    try {
-      const operadorId =
-        await buscarOperadorId();
-
-      const dataRegistro =
-        criarDataRegistro(
-          dataSelecionada
-        );
-
-      /*
-       * Busca novamente os registros daquele dia.
-       * Isso evita criar duplicados.
-       */
-
-      const inicio =
-        criarInicioDoDia(
-          dataSelecionada
-        ).toISOString();
-
-      const fim =
-        criarFimDoDia(
-          dataSelecionada
-        ).toISOString();
-
-      const {
-        data: registrosExistentes,
-        error: erroExistentes,
-      } = await supabase
-        .from("presencas")
-        .select(
-          "id, aluno_id, status"
-        )
-        .eq(
-          "turma_id",
-          turmaSelecionadaId
-        )
-        .gte("data_hora", inicio)
-        .lte("data_hora", fim);
-
-      if (erroExistentes) {
-        throw erroExistentes;
-      }
-
-      /*
-       * Mapa dos registros existentes.
-       */
-
-      const mapaExistentes =
-        new Map<
-          string,
-          {
-            id: string;
-            aluno_id: string;
-          }
-        >();
-
-      for (
-        const registro of
-          registrosExistentes || []
-      ) {
-        if (
-          !mapaExistentes.has(
-            registro.aluno_id
-          )
-        ) {
-          mapaExistentes.set(
-            registro.aluno_id,
-            {
-              id: registro.id,
-              aluno_id:
-                registro.aluno_id,
-            }
-          );
-        }
-      }
-
-      // ------------------------------------------------------
-      // ATUALIZAR / INSERIR
-      // ------------------------------------------------------
-
-      const insercoes: any[] = [];
-      const atualizacoes: Promise<any>[] = [];
-
-      for (const aluno of alunos) {
-        const estado =
-          frequencia[aluno.id];
-
-        /*
-         * Se estiver marcado como presente:
-         * status = presente
-         *
-         * Se estiver marcado como falta:
-         * status = falta
-         */
-
-        const status =
-          estado?.presente
-            ? "presente"
-            : "falta";
-
-        const existente =
-          mapaExistentes.get(
-            aluno.id
-          );
-
-        if (existente) {
-          atualizacoes.push(
-            supabase
-              .from("presencas")
-              .update({
-                status,
-                curso_id:
-                  turmaSelecionada?.curso_id,
-                operador_id:
-                  operadorId,
-                metodo: "manual",
-              })
-              .eq(
-                "id",
-                existente.id
-              )
-          );
-        } else {
-          insercoes.push({
-            aluno_id: aluno.id,
-
-            curso_id:
-              turmaSelecionada?.curso_id,
-
-            turma_id:
-              turmaSelecionadaId,
-
-            operador_id:
-              operadorId,
-
-            metodo: "manual",
-
-            /*
-             * AQUI fica a data escolhida
-             * na chamada.
-             */
-
-            data_hora:
-              dataRegistro,
-
-            status,
-          });
-        }
-      }
-
-      // ------------------------------------------------------
-      // EXECUTAR ATUALIZAÇÕES
-      // ------------------------------------------------------
-
-      if (
-        atualizacoes.length > 0
-      ) {
-        const resultados =
-          await Promise.all(
-            atualizacoes
-          );
-
-        const erro =
-          resultados.find(
-            (resultado) =>
-              resultado.error
-          )?.error;
-
-        if (erro) {
-          throw erro;
-        }
-      }
-
-      // ------------------------------------------------------
-      // INSERIR NOVOS
-      // ------------------------------------------------------
-
-      if (insercoes.length > 0) {
-        const {
-          error: erroInsert,
-        } = await supabase
-          .from("presencas")
-          .insert(
-            insercoes
-          );
-
-        if (erroInsert) {
-          throw erroInsert;
-        }
-      }
-
-      // ------------------------------------------------------
-      // RECARREGAR CHAMADA
-      // ------------------------------------------------------
-
-      const {
-        data: registrosSalvos,
-        error: erroRecarregar,
-      } = await supabase
-        .from("presencas")
-        .select(
-          "id, aluno_id, status"
-        )
-        .eq(
-          "turma_id",
-          turmaSelecionadaId
-        )
-        .gte("data_hora", inicio)
-        .lte("data_hora", fim);
-
-      if (erroRecarregar) {
-        throw erroRecarregar;
-      }
-
-      const novaFrequencia: Record<
-        string,
-        RegistroFrequencia
-      > = {};
-
-      for (const aluno of alunos) {
-        const registro =
-          (registrosSalvos || []).find(
-            (item) =>
-              item.aluno_id ===
-              aluno.id
-          );
-
-        novaFrequencia[aluno.id] = {
-          alunoId: aluno.id,
-
-          presente:
-            registro
-              ? registro.status !==
-                "falta"
-              : false,
-
-          registroId:
-            registro?.id || null,
-        };
-      }
-
-      /*
-       * IMPORTANTE:
-       *
-       * NÃO limpamos a turma.
-       * NÃO limpamos a data.
-       *
-       * A chamada continua na tela.
-       */
-
-      setFrequencia(
-        novaFrequencia
-      );
-
-      setSucesso(
-        `Chamada de ${formatarData(
-          dataSelecionada
-        )} salva com sucesso! ${totalPresentes} presença(s) e ${totalFaltas} falta(s).`
-      );
-    } catch (error: any) {
-      console.error(
-        "Erro ao salvar chamada:",
-        error
-      );
-
-      setErro(
-        error?.message ||
-          "Não foi possível salvar a chamada."
-      );
-    } finally {
-      setSalvando(false);
-    }
-  }
 
   // ==========================================================
   // LIMPAR FILTROS
   // ==========================================================
 
-  function limparFiltros() {
+  const limparFiltros = () => {
     setFiltroCurso("");
     setFiltroTurno("");
+    setFiltroTurma("");
     setBuscaTurma("");
-  }
+  };
 
   // ==========================================================
-  // LIMPAR TURMA
+  // QUANTIDADE
   // ==========================================================
 
-  function limparTurma() {
-    setTurmaSelecionadaId("");
-    setAlunos([]);
-    setFrequencia({});
-    setBuscaAluno("");
-    setErro("");
-    setSucesso("");
-  }
+  const qtdPresentes =
+    Object.values(frequencia).filter(
+      (f) => f.presente
+    ).length;
+
+  const qtdFaltas =
+    alunos.length - qtdPresentes;
 
   // ==========================================================
-  // LOADING INICIAL
+  // DATA FORMATADA
   // ==========================================================
 
-  if (carregandoBase) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="flex items-center gap-3 text-slate-500">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          Carregando cursos e turmas...
-        </div>
-      </div>
-    );
-  }
+  const dataFormatada = useMemo(() => {
+    if (!dataSelecionada) {
+      return "";
+    }
+
+    const partes =
+      dataSelecionada.split("-");
+
+    if (partes.length !== 3) {
+      return dataSelecionada;
+    }
+
+    return `${partes[2]}/${partes[1]}/${partes[0]}`;
+  }, [dataSelecionada]);
+
+  // ==========================================================
+  // CHECK-IN INDIVIDUAL POR NOME (RF11)
+  // ==========================================================
+
+  const [nomeBusca, setNomeBusca] = useState("");
+  const [buscaResultado, setBuscaResultado] = useState<{
+    alunos: { 
+      id: string; 
+      nome_completo: string; 
+      cpf: string | null;
+      matriculas: { id: string; curso_id: string; turma_id: string; cursos: { titulo: string } | null; turmas: { nome: string } | null }[];
+    }[];
+    status: "idle" | "buscando" | "encontrado" | "nao_encontrado" | "confirmado" | "erro";
+    mensagem: string;
+  }>({ alunos: [], status: "idle", mensagem: "" });
+  const [savingMatriculaId, setSavingMatriculaId] = useState<string | null>(null);
+
+  const buscarPorNome = async () => {
+    const nome = nomeBusca.trim();
+    if (nome.length < 3) {
+      setBuscaResultado({ alunos: [], status: "erro", mensagem: "Digite pelo menos 3 letras para buscar." });
+      return;
+    }
+
+    setBuscaResultado({ alunos: [], status: "buscando", mensagem: "" });
+
+    try {
+      const { data: alunosData, error: alunosError } = await supabase
+        .from("alunos")
+        .select(`
+          id, 
+          nome_completo, 
+          cpf,
+          matriculas(
+            id, 
+            curso_id, 
+            turma_id, 
+            cursos(titulo), 
+            turmas(nome)
+          )
+        `)
+        .ilike("nome_completo", `%${nome}%`)
+        .limit(10);
+
+      if (alunosError) throw alunosError;
+
+      if (!alunosData || alunosData.length === 0) {
+        setBuscaResultado({ alunos: [], status: "nao_encontrado", mensagem: "Nenhum participante encontrado com este nome." });
+        return;
+      }
+
+      // Filtrar apenas alunos que têm matrículas e formatar
+      const alunosFormatados = alunosData
+        .filter(a => a.matriculas && a.matriculas.length > 0)
+        .map(a => ({
+          id: a.id,
+          nome_completo: a.nome_completo,
+          cpf: a.cpf,
+          matriculas: (a.matriculas || []).map((m: any) => ({
+            ...m,
+            cursos: Array.isArray(m.cursos) ? m.cursos[0] : m.cursos,
+            turmas: Array.isArray(m.turmas) ? m.turmas[0] : m.turmas,
+          }))
+        }));
+
+      if (alunosFormatados.length === 0) {
+        setBuscaResultado({ alunos: [], status: "erro", mensagem: "Os participantes encontrados não possuem matrículas ativas." });
+        return;
+      }
+
+      setBuscaResultado({ alunos: alunosFormatados, status: "encontrado", mensagem: "" });
+    } catch (err: any) {
+      setBuscaResultado({ alunos: [], status: "erro", mensagem: "Erro ao buscar: " + err.message });
+    }
+  };
+
+  const confirmarCheckinNome = async (alunoId: string, matriculaId: string) => {
+    const aluno = buscaResultado.alunos.find(a => a.id === alunoId);
+    if (!aluno) return;
+    const mat = aluno.matriculas.find(m => m.id === matriculaId);
+    if (!mat) return;
+
+    setSavingMatriculaId(matriculaId);
+    try {
+      const operadorId = await getOperadorId();
+      const agora = new Date();
+      const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+      const inicioDia = new Date(`${hoje}T00:00:00`).toISOString();
+      const fimDia = new Date(`${hoje}T23:59:59.999`).toISOString();
+
+      // Se a chamada marcou falta, o check-in transforma o registro em presença.
+      const { data: jaExiste, error: buscaError } = await supabase
+        .from("presencas")
+        .select("id, status")
+        .eq("aluno_id", aluno.id)
+        .eq("turma_id", mat.turma_id)
+        .gte("data_hora", inicioDia)
+        .lte("data_hora", fimDia)
+        .maybeSingle();
+      if (buscaError) throw buscaError;
+
+      if (jaExiste?.status === "presente") {
+        setBuscaResultado(prev => ({ ...prev, status: "erro", mensagem: "Este participante já possui presença registrada hoje nesta turma." }));
+        setSavingMatriculaId(null);
+        return;
+      }
+
+      if (jaExiste?.status === "falta") {
+        const { error } = await supabase.from("presencas").update({ status: "presente", metodo: "nome", operador_id: operadorId }).eq("id", jaExiste.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("presencas").insert({
+          aluno_id: aluno.id,
+          curso_id: mat.curso_id,
+          turma_id: mat.turma_id,
+          operador_id: operadorId,
+          metodo: "nome",
+          data_hora: agora.toISOString(),
+          status: "presente",
+        });
+        if (error) throw error;
+      }
+
+      setBuscaResultado(prev => ({
+        ...prev,
+        status: "confirmado",
+        mensagem: `Presença de ${aluno.nome_completo} confirmada com sucesso!`,
+      }));
+
+      // Limpar após 3 segundos
+      setTimeout(() => {
+        setNomeBusca("");
+        setBuscaResultado({ alunos: [], status: "idle", mensagem: "" });
+      }, 3000);
+    } catch (err: any) {
+      setBuscaResultado(prev => ({ ...prev, status: "erro", mensagem: "Erro ao registrar presença: " + err.message }));
+    } finally {
+      setSavingMatriculaId(null);
+    }
+  };
+
+  const formatCpfDisplay = (cpf: string | null) => {
+    if (!cpf) return "—";
+    const d = cpf.replace(/\D/g, "");
+    if (d.length === 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9,11)}`;
+    return cpf;
+  };
 
   // ==========================================================
   // TELA
   // ==========================================================
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-10">
 
-      {/* =====================================================
-          CABEÇALHO
-      ====================================================== */}
-
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-          Chamada / Check-in
-        </h1>
-
-        <p className="text-sm text-slate-500 mt-1">
-          Registre presença e falta dos alunos por curso,
-          turma e data.
-        </p>
-      </div>
-
-      {/* =====================================================
-          ERRO
-      ====================================================== */}
-
-      {erro && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-
-          <div className="flex-1">
-            <p className="font-semibold text-sm">
-              Atenção
-            </p>
-
-            <p className="text-sm mt-1">
-              {erro}
-            </p>
+      {/* CHECK-IN RÁPIDO POR NOME */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+            <Search className="w-5 h-5 text-emerald-600" />
           </div>
-
-          <button
-            onClick={() => setErro("")}
-            className="text-red-400 hover:text-red-600"
-          >
-            <XCircle className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-
-      {/* =====================================================
-          SUCESSO
-      ====================================================== */}
-
-      {sucesso && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg p-4 flex items-start gap-3">
-          <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
-
-          <div className="flex-1">
-            <p className="font-semibold text-sm">
-              Chamada salva
-            </p>
-
-            <p className="text-sm mt-1">
-              {sucesso}
-            </p>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Check-in Rápido por Nome</h2>
+            <p className="text-xs text-slate-500">Digite parte do nome do participante para registrar a presença individual.</p>
           </div>
-
-          <button
-            onClick={() => setSucesso("")}
-            className="text-emerald-400 hover:text-emerald-600"
-          >
-            <XCircle className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-
-      {/* =====================================================
-          DATA
-      ====================================================== */}
-
-      <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
-
-        <div className="flex items-center gap-2 mb-4">
-          <CalendarDays className="w-5 h-5 text-blue-600" />
-
-          <h2 className="font-semibold text-slate-900">
-            Data da chamada
-          </h2>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-4">
-
+        <div className="flex gap-3 items-end">
           <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Data
-            </label>
-
             <input
-              type="date"
-              value={dataSelecionada}
-              onChange={(event) => {
-                setDataSelecionada(
-                  event.target.value
-                );
-                setErro("");
-                setSucesso("");
-              }}
-              className="w-full px-3 py-2.5 border border-slate-200 rounded-md text-sm bg-slate-50 focus:outline-none focus:border-blue-500"
+              type="text"
+              value={nomeBusca}
+              onChange={(e) => setNomeBusca(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") buscarPorNome(); }}
+              placeholder="Ex: Maria da Silva"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm"
             />
           </div>
+          <button
+            onClick={buscarPorNome}
+            disabled={buscaResultado.status === "buscando"}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <Search className="w-4 h-4" />
+            {buscaResultado.status === "buscando" ? "Buscando..." : "Buscar"}
+          </button>
+        </div>
 
-          <div className="flex-1 bg-blue-50 border border-blue-100 rounded-md px-4 py-3">
-            <p className="text-xs text-blue-600 font-medium">
-              Data selecionada
-            </p>
+        {/* Resultado da busca */}
+        {buscaResultado.status === "nao_encontrado" && (
+          <div className="mt-4 p-4 rounded-xl bg-orange-50 border border-orange-200 text-orange-700 text-sm font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {buscaResultado.mensagem}
+          </div>
+        )}
 
-            <p className="text-lg font-bold text-blue-900 mt-1">
-              {formatarData(
-                dataSelecionada
-              )}
-            </p>
+        {buscaResultado.status === "erro" && (
+          <div className="mt-4 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {buscaResultado.mensagem}
+          </div>
+        )}
+
+        {buscaResultado.status === "confirmado" && (
+          <div className="mt-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium flex items-center gap-2">
+            <Check className="w-5 h-5 shrink-0" />
+            {buscaResultado.mensagem}
+          </div>
+        )}
+
+        {buscaResultado.status === "encontrado" && buscaResultado.alunos.length > 0 && (
+          <div className="mt-4 space-y-4">
+            {buscaResultado.alunos.map((aluno) => (
+              <div key={aluno.id} className="p-4 rounded-xl bg-blue-50 border border-blue-200 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-200 flex items-center justify-center text-blue-800 font-bold text-sm">
+                    {aluno.nome_completo.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">{aluno.nome_completo}</p>
+                    <p className="text-xs text-slate-500">CPF: {formatCpfDisplay(aluno.cpf)}</p>
+                  </div>
+                </div>
+
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Selecione o curso/turma para confirmar a presença:</p>
+
+                <div className="space-y-2">
+                  {aluno.matriculas.map((mat) => (
+                    <div key={mat.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-blue-200">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{mat.cursos?.titulo || "Curso"}</p>
+                        <p className="text-xs text-slate-500">Turma: {mat.turmas?.nome || "—"}</p>
+                      </div>
+                      <button
+                        onClick={() => confirmarCheckinNome(aluno.id, mat.id)}
+                        disabled={savingMatriculaId !== null}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {savingMatriculaId === mat.id ? "Registrando..." : "Confirmar Presença"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* CABEÇALHO */}
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+
+          <div className="flex items-center gap-4">
+
+            <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
+              <UserCheck className="w-7 h-7 text-blue-600" />
+            </div>
+
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">
+                Diário de Classe
+              </h1>
+
+              <p className="text-sm text-slate-500 mt-1">
+                Realize a chamada e controle
+                a frequência dos alunos.
+              </p>
+            </div>
+
+          </div>
+
+          <div className="flex flex-col gap-1 min-w-[230px]">
+
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+              Data da Chamada
+            </label>
+
+            <div className="relative">
+
+              <CalendarIcon className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+              <input
+                type="date"
+                value={dataSelecionada}
+                onChange={(e) =>
+                  setDataSelecionada(
+                    e.target.value
+                  )
+                }
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+
+            </div>
+
           </div>
 
         </div>
+
       </div>
 
-      {/* =====================================================
-          FILTROS DE TURMA
+      {/* ERRO */}
+
+      {erro && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700">
+
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+
+          <p className="font-medium text-sm flex-1">
+            {erro}
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              setErro("")
+            }
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+        </div>
+      )}
+
+      {/* SUCESSO */}
+
+      {sucesso && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700">
+
+          <Check className="w-5 h-5 shrink-0 mt-0.5" />
+
+          <p className="font-medium text-sm flex-1">
+            {sucesso}
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              setSucesso("")
+            }
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+        </div>
+      )}
+
+      {/* ======================================================
+          SELEÇÃO DAS TURMAS
       ====================================================== */}
 
       {!turmaSelecionadaId && (
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-4">
-            <Filter className="w-4 h-4" />
-            Escolha a turma
-          </div>
+          {/* TÍTULO */}
 
-          {/* Filtros */}
+          <div className="p-6 border-b border-slate-200">
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+            <div className="flex items-center gap-3">
 
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Curso
-              </label>
-
-              <select
-                value={filtroCurso}
-                onChange={(event) =>
-                  setFiltroCurso(
-                    event.target.value
-                  )
-                }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-              >
-                <option value="">
-                  Todos os cursos
-                </option>
-
-                {cursos.map((curso) => (
-                  <option
-                    key={curso.id}
-                    value={curso.id}
-                  >
-                    {curso.titulo}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Turno
-              </label>
-
-              <select
-                value={filtroTurno}
-                onChange={(event) =>
-                  setFiltroTurno(
-                    event.target.value
-                  )
-                }
-                className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-              >
-                <option value="">
-                  Todos os turnos
-                </option>
-
-                {turnosDisponiveis.map(
-                  (turno) => (
-                    <option
-                      key={turno}
-                      value={turno}
-                    >
-                      {turno}
-                    </option>
-                  )
-                )}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Pesquisar turma
-              </label>
-
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-
-                <input
-                  type="text"
-                  value={buscaTurma}
-                  onChange={(event) =>
-                    setBuscaTurma(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Nome da turma..."
-                  className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50"
-                />
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                <Filter className="w-5 h-5 text-blue-600" />
               </div>
-            </div>
-
-          </div>
-
-          <div className="flex justify-end mb-4">
-            <button
-              onClick={limparFiltros}
-              className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-800"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Limpar filtros
-            </button>
-          </div>
-
-          {/* Lista de turmas */}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-
-            {turmasFiltradas.length === 0 && (
-              <div className="col-span-full py-10 text-center text-slate-500 text-sm">
-                Nenhuma turma encontrada.
-              </div>
-            )}
-
-            {turmasFiltradas.map(
-              (turma) => {
-                const curso =
-                  cursos.find(
-                    (item) =>
-                      item.id ===
-                      turma.curso_id
-                  );
-
-                return (
-                  <button
-                    key={turma.id}
-                    onClick={() => {
-                      setTurmaSelecionadaId(
-                        turma.id
-                      );
-                      setErro("");
-                      setSucesso("");
-                    }}
-                    className="text-left bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-lg p-4 transition-all group"
-                  >
-
-                    <div className="flex items-start justify-between gap-3">
-
-                      <div className="min-w-0">
-
-                        <p className="font-semibold text-slate-900 truncate">
-                          {turma.nome}
-                        </p>
-
-                        <p className="text-xs text-blue-600 mt-1">
-                          {curso?.titulo ||
-                            "Curso não informado"}
-                        </p>
-
-                        <div className="flex flex-wrap gap-2 mt-3">
-
-                          {turma.turno && (
-                            <span className="text-[11px] bg-white border border-slate-200 rounded px-2 py-1 text-slate-600">
-                              {turma.turno}
-                            </span>
-                          )}
-
-                          {turma.horario && (
-                            <span className="text-[11px] bg-white border border-slate-200 rounded px-2 py-1 text-slate-600 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {turma.horario}
-                            </span>
-                          )}
-
-                        </div>
-
-                      </div>
-
-                      <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-600 shrink-0" />
-
-                    </div>
-
-                  </button>
-                );
-              }
-            )}
-
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================
-          CHAMADA
-      ====================================================== */}
-
-      {turmaSelecionadaId && (
-        <div className="flex flex-col gap-5">
-
-          {/* Cabeçalho da turma */}
-
-          <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
-
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 
               <div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={limparTurma}
-                    className="text-xs text-blue-600 hover:text-blue-800"
-                  >
-                    ← Trocar turma
-                  </button>
-                </div>
-
-                <h2 className="text-xl font-bold text-slate-900 mt-2">
-                  {turmaSelecionada?.nome}
+                <h2 className="text-lg font-bold text-slate-900">
+                  Organizar chamada
                 </h2>
 
-                <p className="text-sm text-blue-600 mt-1">
-                  {cursoSelecionado?.titulo}
+                <p className="text-sm text-slate-500 mt-1">
+                  Filtre por curso, turno ou turma
+                  para encontrar rapidamente a chamada.
                 </p>
-
-                <p className="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
-                  <CalendarDays className="w-3.5 h-3.5" />
-                  Chamada do dia{" "}
-                  <strong>
-                    {formatarData(
-                      dataSelecionada
-                    )}
-                  </strong>
-                </p>
-
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-
-                <div className="bg-slate-50 rounded-md px-4 py-3 text-center">
-                  <p className="text-[11px] text-slate-500">
-                    Alunos
-                  </p>
-
-                  <p className="text-xl font-bold text-slate-900">
-                    {totalAlunos}
-                  </p>
-                </div>
-
-                <div className="bg-emerald-50 rounded-md px-4 py-3 text-center">
-                  <p className="text-[11px] text-emerald-600">
-                    Presentes
-                  </p>
-
-                  <p className="text-xl font-bold text-emerald-700">
-                    {totalPresentes}
-                  </p>
-                </div>
-
-                <div className="bg-red-50 rounded-md px-4 py-3 text-center">
-                  <p className="text-[11px] text-red-600">
-                    Faltas
-                  </p>
-
-                  <p className="text-xl font-bold text-red-700">
-                    {totalFaltas}
-                  </p>
-                </div>
 
               </div>
 
@@ -1330,200 +1034,824 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* Controles */}
+          {/* ==================================================
+              FILTROS
+          ================================================== */}
 
-          <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+          <div className="p-6 bg-slate-50 border-b border-slate-200">
 
-            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
 
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              {/* CURSO */}
 
-                <input
-                  type="text"
-                  value={buscaAluno}
-                  onChange={(event) =>
-                    setBuscaAluno(
-                      event.target.value
+              <div>
+
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Curso / Matéria
+                </label>
+
+                <select
+                  value={filtroCurso}
+                  onChange={(e) => {
+                    setFiltroCurso(
+                      e.target.value
+                    );
+
+                    setFiltroTurma("");
+                  }}
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+
+                  <option value="">
+                    Todos os cursos
+                  </option>
+
+                  {cursos.map((curso) => (
+                    <option
+                      key={curso.id}
+                      value={curso.id}
+                    >
+                      {curso.titulo}
+                    </option>
+                  ))}
+
+                </select>
+
+              </div>
+
+              {/* TURNO */}
+
+              <div>
+
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Turno
+                </label>
+
+                <select
+                  value={filtroTurno}
+                  onChange={(e) => {
+                    setFiltroTurno(
+                      e.target.value
+                    );
+
+                    setFiltroTurma("");
+                  }}
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+
+                  <option value="">
+                    Todos os turnos
+                  </option>
+
+                  {turnosDisponiveis.map(
+                    (turno) => (
+                      <option
+                        key={turno}
+                        value={turno}
+                      >
+                        {turno}
+                      </option>
+                    )
+                  )}
+
+                </select>
+
+              </div>
+
+              {/* TURMA */}
+
+              <div>
+
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Turma
+                </label>
+
+                <select
+                  value={filtroTurma}
+                  onChange={(e) =>
+                    setFiltroTurma(
+                      e.target.value
                     )
                   }
-                  placeholder="Pesquisar aluno..."
-                  className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-md text-sm bg-slate-50"
-                />
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+
+                  <option value="">
+                    Todas as turmas
+                  </option>
+
+                  {turmasParaSelect.map(
+                    (turma) => (
+                      <option
+                        key={turma.id}
+                        value={turma.id}
+                      >
+                        {turma.nome}
+                      </option>
+                    )
+                  )}
+
+                </select>
+
               </div>
 
-              <div className="flex gap-2">
+              {/* PESQUISA */}
 
-                <button
-                  onClick={() =>
-                    marcarTodos(true)
-                  }
-                  disabled={
-                    carregandoAlunos ||
-                    alunos.length === 0
-                  }
-                  className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-medium disabled:opacity-50"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  Todos presentes
-                </button>
+              <div>
 
-                <button
-                  onClick={() =>
-                    marcarTodos(false)
-                  }
-                  disabled={
-                    carregandoAlunos ||
-                    alunos.length === 0
-                  }
-                  className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-medium disabled:opacity-50"
-                >
-                  <UserX className="w-4 h-4" />
-                  Todos faltaram
-                </button>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                  Pesquisar
+                </label>
+
+                <div className="relative">
+
+                  <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+                  <input
+                    type="text"
+                    value={buscaTurma}
+                    onChange={(e) =>
+                      setBuscaTurma(
+                        e.target.value
+                      )
+                    }
+                    placeholder="Nome da turma..."
+                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+
+                </div>
 
               </div>
+
+            </div>
+
+            {/* INFORMAÇÕES DOS FILTROS */}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5">
+
+              <div className="flex flex-wrap items-center gap-2">
+
+                <span className="text-sm text-slate-500 font-medium">
+                  {turmasFiltradas.length}{" "}
+                  {turmasFiltradas.length === 1
+                    ? "turma encontrada"
+                    : "turmas encontradas"}
+                </span>
+
+                {filtroCurso && (
+                  <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
+                    Curso selecionado
+                  </span>
+                )}
+
+                {filtroTurno && (
+                  <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold">
+                    Turno: {filtroTurno}
+                  </span>
+                )}
+
+                {filtroTurma && (
+                  <span className="px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold">
+                    Turma selecionada
+                  </span>
+                )}
+
+              </div>
+
+              {(filtroCurso ||
+                filtroTurno ||
+                filtroTurma ||
+                buscaTurma) && (
+                <button
+                  type="button"
+                  onClick={
+                    limparFiltros
+                  }
+                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-semibold text-sm"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Limpar filtros
+                </button>
+              )}
 
             </div>
 
           </div>
 
-          {/* Lista */}
+          {/* ==================================================
+              LISTA DE TURMAS
+          ================================================== */}
 
-          <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="p-6">
 
-            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            {isLoadingInitial ? (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-400">
 
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-slate-600" />
+                <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-500" />
 
-                <div>
-                  <h3 className="font-semibold text-slate-900">
-                    Alunos da turma
-                  </h3>
-
-                  <p className="text-xs text-slate-500">
-                    Marque presente ou falta
-                  </p>
-                </div>
-              </div>
-
-              <span className="text-xs text-slate-500">
-                {alunosFiltrados.length} aluno(s)
-              </span>
-
-            </div>
-
-            {carregandoAlunos ? (
-              <div className="py-16 flex justify-center">
-                <div className="flex items-center gap-3 text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Carregando alunos e chamada...
-                </div>
-              </div>
-            ) : alunos.length === 0 ? (
-              <div className="py-16 text-center">
-                <Users className="w-10 h-10 mx-auto text-slate-300" />
-
-                <p className="font-medium text-slate-600 mt-3">
-                  Nenhum aluno matriculado
+                <p className="font-medium">
+                  Carregando turmas...
                 </p>
 
-                <p className="text-sm text-slate-400 mt-1">
-                  Cadastre uma matrícula para esta turma.
+              </div>
+            ) : turmas.length === 0 ? (
+              <div className="text-center py-16 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+
+                <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+
+                <h3 className="text-lg font-bold text-slate-700">
+                  Nenhuma turma encontrada
+                </h3>
+
+                <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">
+                  Não existem turmas cadastradas
+                  ou a consulta ao banco retornou
+                  algum erro.
                 </p>
+
+              </div>
+            ) : turmasFiltradas.length === 0 ? (
+              <div className="text-center py-12">
+
+                <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+
+                <p className="font-semibold text-slate-600">
+                  Nenhuma turma encontrada
+                  com esses filtros.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={
+                    limparFiltros
+                  }
+                  className="mt-4 inline-flex items-center gap-2 text-sm text-blue-600 font-semibold hover:text-blue-700"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Limpar filtros
+                </button>
+
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
 
-                {alunosFiltrados.map(
-                  (aluno, index) => {
+                {turmasFiltradas.map(
+                  (turma) => {
+                    const curso =
+                      cursos.find(
+                        (c) =>
+                          c.id ===
+                          turma.curso_id
+                      );
 
-                    const estado =
-                      frequencia[
-                        aluno.id
-                      ];
-
-                    const presente =
-                      estado?.presente === true;
+                    const dias =
+                      turma.dias_semana ||
+                      [];
 
                     return (
-                      <div
-                        key={aluno.id}
-                        className={`px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                          presente
-                            ? "bg-emerald-50/30"
-                            : "bg-red-50/20"
-                        }`}
+                      <button
+                        key={turma.id}
+                        type="button"
+                        onClick={() => {
+                          setTurmaSelecionadaId(
+                            turma.id
+                          );
+
+                          setSearchTerm(
+                            ""
+                          );
+
+                          setErro("");
+                          setSucesso("");
+                        }}
+                        className="group text-left bg-white border border-slate-200 rounded-2xl p-5 hover:border-blue-400 hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
                       >
 
-                        <div className="flex items-center gap-3">
+                        {/* TOPO */}
 
-                          <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
-                            {index + 1}
+                        <div className="flex items-start justify-between gap-3">
+
+                          <div className="flex items-center gap-3 min-w-0">
+
+                            <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
+
+                              <BookOpen className="w-5 h-5 text-blue-600" />
+
+                            </div>
+
+                            <div className="min-w-0">
+
+                              <p className="text-xs font-bold text-blue-600 uppercase tracking-wide truncate">
+                                {curso?.titulo ||
+                                  "Curso não informado"}
+                              </p>
+
+                              <h3 className="text-lg font-bold text-slate-900 truncate mt-1">
+                                {turma.nome}
+                              </h3>
+
+                            </div>
+
                           </div>
 
-                          <div>
-                            <p className="font-medium text-slate-900">
-                              {aluno.nome_completo}
-                            </p>
+                          <div className="w-8 h-8 rounded-full bg-slate-50 group-hover:bg-blue-50 flex items-center justify-center shrink-0">
 
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              {presente
-                                ? "Presença marcada"
-                                : "Falta marcada"}
-                            </p>
+                            <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-blue-600" />
+
                           </div>
 
                         </div>
 
-                        <div className="flex gap-2">
+                        {/* INFORMAÇÕES */}
 
-                          <button
-                            onClick={() =>
-                              marcarAluno(
-                                aluno.id,
-                                true
-                              )
-                            }
-                            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium border transition-colors ${
-                              presente
-                                ? "bg-emerald-600 text-white border-emerald-600"
-                                : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                            }`}
-                          >
-                            <Check className="w-4 h-4" />
-                            Presente
-                          </button>
+                        <div className="mt-5 space-y-3">
 
-                          <button
-                            onClick={() =>
-                              marcarAluno(
-                                aluno.id,
-                                false
-                              )
-                            }
-                            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium border transition-colors ${
-                              !presente
-                                ? "bg-red-600 text-white border-red-600"
-                                : "bg-white text-red-700 border-red-200 hover:bg-red-50"
-                            }`}
-                          >
-                            <XCircle className="w-4 h-4" />
-                            Falta
-                          </button>
+                          {turma.horario && (
+                            <div className="flex items-center gap-3">
+
+                              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+
+                                <Clock className="w-4 h-4 text-slate-600" />
+
+                              </div>
+
+                              <div>
+
+                                <p className="text-[10px] uppercase font-bold text-slate-400">
+                                  Horário
+                                </p>
+
+                                <p className="text-sm font-semibold text-slate-700">
+                                  {turma.horario}
+
+                                  {turma.turno &&
+                                    ` • ${turma.turno}`}
+                                </p>
+
+                              </div>
+
+                            </div>
+                          )}
+
+                          {dias.length > 0 && (
+                            <div className="flex items-start gap-3">
+
+                              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+
+                                <CalendarDays className="w-4 h-4 text-slate-600" />
+
+                              </div>
+
+                              <div>
+
+                                <p className="text-[10px] uppercase font-bold text-slate-400">
+                                  Dias
+                                </p>
+
+                                <p className="text-sm font-semibold text-slate-700">
+                                  {dias.join(
+                                    ", "
+                                  )}
+                                </p>
+
+                              </div>
+
+                            </div>
+                          )}
 
                         </div>
 
-                      </div>
+                        {/* RODAPÉ */}
+
+                        <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+
+                          <div className="flex items-center gap-2 text-slate-500">
+
+                            <Users className="w-4 h-4" />
+
+                            <span className="text-xs font-medium">
+                              Turma
+                            </span>
+
+                          </div>
+
+                          <span className="text-xs font-bold text-blue-600">
+                            Fazer chamada →
+                          </span>
+
+                        </div>
+
+                      </button>
                     );
                   }
                 )}
 
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================
+          CHAMADA
+      ====================================================== */}
+
+      {turmaSelecionadaId && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+          {/* CABEÇALHO DA TURMA */}
+
+          <div className="p-6 bg-slate-50 border-b border-slate-200">
+
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+
+              <div className="flex items-start gap-4">
+
+                <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+
+                  <BookOpen className="w-6 h-6 text-blue-600" />
+
+                </div>
+
+                <div>
+
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-wide">
+                    {cursoDaTurma?.titulo ||
+                      "Curso não informado"}
+                  </p>
+
+                  <h2 className="text-xl font-bold text-slate-900 mt-1">
+                    {turmaSelecionada?.nome}
+                  </h2>
+
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2 text-sm text-slate-500">
+
+                    {turmaSelecionada?.horario && (
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-4 h-4" />
+                        {turmaSelecionada.horario}
+                      </span>
+                    )}
+
+                    {turmaSelecionada?.turno && (
+                      <span className="flex items-center gap-1.5">
+                        <Filter className="w-4 h-4" />
+                        {turmaSelecionada.turno}
+                      </span>
+                    )}
+
+                    {turmaSelecionada?.dias_semana &&
+                      turmaSelecionada
+                        .dias_semana
+                        .length > 0 && (
+                        <span className="flex items-center gap-1.5">
+                          <CalendarDays className="w-4 h-4" />
+
+                          {turmaSelecionada.dias_semana.join(
+                            ", "
+                          )}
+                        </span>
+                      )}
+
+                    <span className="flex items-center gap-1.5">
+                      <CalendarIcon className="w-4 h-4" />
+
+                      {dataFormatada}
+                    </span>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTurmaSelecionadaId(
+                    ""
+                  );
+
+                  setAlunos([]);
+                  setFrequencia({});
+                  setSearchTerm("");
+                  setSucesso("");
+                  setErro("");
+                }}
+                className="self-start lg:self-center px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-semibold text-sm"
+              >
+                ← Trocar turma
+              </button>
+
+            </div>
+
+          </div>
+
+          {/* RESUMO */}
+
+          <div className="p-6 border-b border-slate-200">
+
+            {alunos.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+                <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
+
+                  <div className="flex items-center gap-3">
+
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+
+                      <Users className="w-5 h-5 text-blue-600" />
+
+                    </div>
+
+                    <div>
+
+                      <p className="text-xs font-bold text-blue-600">
+                        TOTAL
+                      </p>
+
+                      <p className="text-xl font-bold text-slate-900">
+                        {alunos.length}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+
+                  <div className="flex items-center gap-3">
+
+                    <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+
+                      <Check className="w-5 h-5 text-emerald-600" />
+
+                    </div>
+
+                    <div>
+
+                      <p className="text-xs font-bold text-emerald-600">
+                        PRESENTES
+                      </p>
+
+                      <p className="text-xl font-bold text-slate-900">
+                        {qtdPresentes}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+                <div className="rounded-xl bg-red-50 border border-red-100 p-4">
+
+                  <div className="flex items-center gap-3">
+
+                    <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+
+                      <UserX className="w-5 h-5 text-red-600" />
+
+                    </div>
+
+                    <div>
+
+                      <p className="text-xs font-bold text-red-600">
+                        FALTAS
+                      </p>
+
+                      <p className="text-xl font-bold text-slate-900">
+                        {qtdFaltas}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+            )}
+
+          </div>
+
+          {/* ALUNOS */}
+
+          <div className="p-6">
+
+            {isLoadingAlunos ? (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+
+                <Loader2 className="w-9 h-9 animate-spin mb-4 text-blue-500" />
+
+                <p>
+                  Buscando lista de alunos
+                  e histórico do dia...
+                </p>
+
+              </div>
+            ) : alunos.length === 0 ? (
+              <div className="text-center py-16 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+
+                <UserX className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+
+                <h3 className="text-lg font-bold text-slate-700">
+                  Turma Vazia
+                </h3>
+
+                <p className="text-slate-500 text-sm mt-1 max-w-md mx-auto">
+                  Esta turma não possui
+                  alunos matriculados.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTurmaSelecionadaId(
+                      ""
+                    )
+                  }
+                  className="mt-5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm"
+                >
+                  Escolher outra turma
+                </button>
+
+              </div>
+            ) : (
+              <div className="space-y-5">
+
+                {/* BUSCA E BOTÕES */}
+
+                <div className="flex flex-col md:flex-row gap-3">
+
+                  <div className="relative flex-1">
+
+                    <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+                    <input
+                      type="text"
+                      placeholder="Buscar aluno na lista..."
+                      value={searchTerm}
+                      onChange={(e) =>
+                        setSearchTerm(
+                          e.target.value
+                        )
+                      }
+                      className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      marcarTodos(true)
+                    }
+                    className="px-4 py-3 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-semibold text-sm rounded-xl flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    Todos presentes
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      marcarTodos(false)
+                    }
+                    className="px-4 py-3 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 font-semibold text-sm rounded-xl flex items-center justify-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Todos faltaram
+                  </button>
+
+                </div>
+
+                {/* LISTA */}
+
                 {alunosFiltrados.length ===
-                  0 && (
-                  <div className="py-12 text-center text-sm text-slate-500">
-                    Nenhum aluno encontrado.
+                0 ? (
+                  <div className="text-center py-10">
+
+                    <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+
+                    <p className="text-slate-500 font-medium">
+                      Nenhum aluno encontrado.
+                    </p>
+
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+                    {alunosFiltrados.map(
+                      (aluno) => {
+                        const state =
+                          frequencia[
+                            aluno.id
+                          ];
+
+                        const presente =
+                          state?.presente ||
+                          false;
+
+                        const salvo =
+                          state?.presencaIdNoBanco !==
+                          null;
+
+                        return (
+                          <button
+                            type="button"
+                            key={aluno.id}
+                            onClick={() =>
+                              togglePresenca(
+                                aluno.id
+                              )
+                            }
+                            className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${
+                              presente
+                                ? "bg-emerald-50 border-emerald-500 shadow-sm"
+                                : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                            }`}
+                          >
+
+                            <div className="flex items-center gap-3 overflow-hidden">
+
+                              <div
+                                className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 font-bold ${
+                                  presente
+                                    ? "bg-emerald-500 text-white"
+                                    : "bg-slate-200 text-slate-600"
+                                }`}
+                              >
+                                {aluno.nome_completo
+                                  .charAt(
+                                    0
+                                  )
+                                  .toUpperCase()}
+                              </div>
+
+                              <div className="min-w-0">
+
+                                <p
+                                  className="font-bold text-slate-900 text-sm truncate"
+                                  title={
+                                    aluno.nome_completo
+                                  }
+                                >
+                                  {
+                                    aluno.nome_completo
+                                  }
+                                </p>
+
+                                <p
+                                  className={`text-xs font-medium mt-1 ${
+                                    presente
+                                      ? "text-emerald-700"
+                                      : "text-slate-500"
+                                  }`}
+                                >
+                                  {presente
+                                    ? "Presente"
+                                    : "Falta"}
+
+                                  {salvo &&
+                                    presente && (
+                                      <span className="ml-1 opacity-70">
+                                        • Salvo
+                                      </span>
+                                    )}
+                                </p>
+
+                              </div>
+
+                            </div>
+
+                            <div className="ml-3 shrink-0">
+
+                              <div
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center border-2 ${
+                                  presente
+                                    ? "bg-emerald-500 border-emerald-500"
+                                    : "bg-white border-slate-300"
+                                }`}
+                              >
+
+                                {presente && (
+                                  <Check className="w-4 h-4 text-white" />
+                                )}
+
+                              </div>
+
+                            </div>
+
+                          </button>
+                        );
+                      }
+                    )}
+
                   </div>
                 )}
 
@@ -1532,68 +1860,48 @@ export default function FormCheckin() {
 
           </div>
 
-          {/* =================================================
-              RESUMO + BOTÃO SALVAR
-          ================================================== */}
+          {/* SALVAR */}
 
-          {alunos.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+          {alunos.length > 0 &&
+            !isLoadingAlunos && (
+              <div className="p-6 bg-slate-50 border-t border-slate-200">
 
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
 
-                <div>
-
-                  <p className="text-sm font-semibold text-slate-800">
-                    Resumo da chamada
+                  <p className="text-sm text-slate-500">
+                    <strong className="text-slate-700">
+                      {qtdPresentes}
+                    </strong>{" "}
+                    presentes de{" "}
+                    <strong className="text-slate-700">
+                      {alunos.length}
+                    </strong>{" "}
+                    alunos.
                   </p>
 
-                  <div className="flex flex-wrap gap-4 mt-2 text-sm">
+                  <button
+                    type="button"
+                    onClick={handleSalvar}
+                    disabled={isSaving}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
 
-                    <span className="flex items-center gap-2 text-emerald-700">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      {totalPresentes} presentes
-                    </span>
+                    {isSaving ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Save className="w-5 h-5" />
+                    )}
 
-                    <span className="flex items-center gap-2 text-red-700">
-                      <span className="w-2 h-2 rounded-full bg-red-500" />
-                      {totalFaltas} faltas
-                    </span>
+                    {isSaving
+                      ? "Salvando..."
+                      : "Salvar Presenças"}
 
-                    <span className="text-slate-500">
-                      Data:{" "}
-                      <strong>
-                        {formatarData(
-                          dataSelecionada
-                        )}
-                      </strong>
-                    </span>
-
-                  </div>
+                  </button>
 
                 </div>
 
-                <button
-                  onClick={salvarChamada}
-                  disabled={salvando}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {salvando ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Salvando chamada...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-5 h-5" />
-                      Salvar chamada
-                    </>
-                  )}
-                </button>
-
               </div>
-
-            </div>
-          )}
+            )}
 
         </div>
       )}
