@@ -1762,92 +1762,94 @@ export default function FormCheckin() {
                           null;
 
                         return (
-                          <button
-                            type="button"
+                          <div
                             key={aluno.id}
-                            onClick={() =>
-                              togglePresenca(
-                                aluno.id
-                              )
-                            }
-                            className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${
+                            className={`w-full p-4 rounded-2xl border-2 transition-all ${
                               presente
                                 ? "bg-emerald-50 border-emerald-500 shadow-sm"
-                                : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                : "bg-red-50 border-red-300"
                             }`}
                           >
-
-                            <div className="flex items-center gap-3 overflow-hidden">
-
-                              <div
-                                className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 font-bold ${
-                                  presente
-                                    ? "bg-emerald-500 text-white"
-                                    : "bg-slate-200 text-slate-600"
-                                }`}
-                              >
-                                {aluno.nome_completo
-                                  .charAt(
-                                    0
-                                  )
-                                  .toUpperCase()}
-                              </div>
-
-                              <div className="min-w-0">
-
-                                <p
-                                  className="font-bold text-slate-900 text-sm truncate"
-                                  title={
-                                    aluno.nome_completo
-                                  }
-                                >
-                                  {
-                                    aluno.nome_completo
-                                  }
-                                </p>
-
-                                <p
-                                  className={`text-xs font-medium mt-1 ${
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                                <div
+                                  className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 font-bold ${
                                     presente
-                                      ? "text-emerald-700"
-                                      : "text-slate-500"
+                                      ? "bg-emerald-500 text-white"
+                                      : "bg-red-500 text-white"
                                   }`}
                                 >
-                                  {presente
-                                    ? "Presente"
-                                    : "Falta"}
+                                  {aluno.nome_completo.charAt(0).toUpperCase()}
+                                </div>
 
-                                  {salvo &&
-                                    presente && (
-                                      <span className="ml-1 opacity-70">
-                                        • Salvo
-                                      </span>
+                                <div className="min-w-0">
+                                  <p
+                                    className="font-bold text-slate-900 text-sm truncate"
+                                    title={aluno.nome_completo}
+                                  >
+                                    {aluno.nome_completo}
+                                  </p>
+
+                                  <p
+                                    className={`text-xs font-semibold mt-1 ${
+                                      presente ? "text-emerald-700" : "text-red-700"
+                                    }`}
+                                  >
+                                    {presente ? "Presente" : "Falta"}
+                                    {salvo && (
+                                      <span className="ml-1 opacity-70">• Salvo</span>
                                     )}
-                                </p>
-
+                                  </p>
+                                </div>
                               </div>
 
-                            </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFrequencia((prev) => ({
+                                      ...prev,
+                                      [aluno.id]: {
+                                        ...prev[aluno.id],
+                                        presente: true,
+                                      },
+                                    }));
+                                    setSucesso("");
+                                  }}
+                                  className={`px-3 py-2 rounded-lg border font-bold text-xs flex items-center gap-1.5 transition-colors ${
+                                    presente
+                                      ? "bg-emerald-600 text-white border-emerald-600"
+                                      : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                                  }`}
+                                >
+                                  <Check className="w-4 h-4" />
+                                  Presente
+                                </button>
 
-                            <div className="ml-3 shrink-0">
-
-                              <div
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center border-2 ${
-                                  presente
-                                    ? "bg-emerald-500 border-emerald-500"
-                                    : "bg-white border-slate-300"
-                                }`}
-                              >
-
-                                {presente && (
-                                  <Check className="w-4 h-4 text-white" />
-                                )}
-
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFrequencia((prev) => ({
+                                      ...prev,
+                                      [aluno.id]: {
+                                        ...prev[aluno.id],
+                                        presente: false,
+                                      },
+                                    }));
+                                    setSucesso("");
+                                  }}
+                                  className={`px-3 py-2 rounded-lg border font-bold text-xs flex items-center gap-1.5 transition-colors ${
+                                    !presente
+                                      ? "bg-red-600 text-white border-red-600"
+                                      : "bg-white text-red-700 border-red-300 hover:bg-red-50"
+                                  }`}
+                                >
+                                  <UserX className="w-4 h-4" />
+                                  Falta
+                                </button>
                               </div>
-
                             </div>
-
-                          </button>
+                          </div>
                         );
                       }
                     )}
