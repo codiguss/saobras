@@ -1,53 +1,76 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Search,
-  Calendar,
-  Filter,
-  RotateCcw,
-  Clock,
-  User,
   Users,
+  GraduationCap,
+  BookOpen,
+  ClipboardList,
   CheckCircle2,
   XCircle,
-  Percent,
-  Download,
+  TrendingUp,
+  UserCheck,
+  Search,
+  RefreshCw,
+  ArrowUpRight,
+  CalendarDays,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-type Curso = {
-  id: string;
-  titulo: string;
-};
-
+type Curso = { id: string; titulo: string };
 type Turma = {
   id: string;
   nome: string;
   curso_id: string;
+  horario?: string | null;
+  turno?: string | null;
+  vagas?: number | null;
+  cursos?: { titulo: string } | { titulo: string }[] | null;
 };
 
-type PresencaRegistro = {
+type Matricula = {
   id: string;
   aluno_id: string;
   curso_id: string;
   turma_id: string;
-  data_hora: string;
-  metodo: string | null;
-  operador_id: string | null;
-  status: string | null;
-  alunos:
-    | { nome_completo: string; cpf: string | null }
-    | { nome_completo: string; cpf: string | null }[]
-    | null;
-  cursos: { titulo: string } | { titulo: string }[] | null;
-  turmas: { nome: string } | { nome: string }[] | null;
-  operadores: { nome: string } | { nome: string }[] | null;
+  data_matricula: string;
+  alunos?: { nome_completo: string } | null;
 };
 
-function pegarRelacao<T>(valor: T | T[] | null): T | null {
-  if (!valor) return null;
-  return Array.isArray(valor) ? valor[0] || null : valor;
+type Aluno = {
+  id: string;
+  nome_completo: string;
+};
+
+type Presenca = {
+  id: string;
+  aluno_id: string;
+  turma_id: string;
+  curso_id: string;
+  status: string | null;
+  data_hora: string;
+};
+
+function relacao<T>(v: T | T[] | null | undefined): T | null {
+  return Array.isArray(v) ? v[0] || null : v || null;
+}
+
+function statusPresenca(status: string | null) {
+  return String(status || "presente").toLowerCase().trim() === "falta"
+    ? "falta"
+    : "presente";
+}
+
+function percentual(valor: number, total: number) {
+  if (!total) return 0;
+  return Math.round((valor / total) * 100);
+}
+
+function formatarData(data: string) {
+  const d = new Date(data);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleDateString("pt-BR");
 }
 
 export default function HistoricoClient({
@@ -57,607 +80,447 @@ export default function HistoricoClient({
   cursos: Curso[];
   turmas: Turma[];
 }) {
-  const [presencas, setPresencas] = useState<PresencaRegistro[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [buscou, setBuscou] = useState(false);
+  const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [matriculas, setMatriculas] = useState<Matricula[]>([]);
+  const [presencas, setPresencas] = useState<Presenca[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [cursoFiltro, setCursoFiltro] = useState("");
+  const [turmaFiltro, setTurmaFiltro] = useState("");
 
-  const [filtroCpf, setFiltroCpf] = useState("");
-  const [filtroNome, setFiltroNome] = useState("");
-  const [filtroCurso, setFiltroCurso] = useState("");
-  const [filtroTurma, setFiltroTurma] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("");
-  const [filtroDataInicio, setFiltroDataInicio] = useState("");
-  const [filtroDataFim, setFiltroDataFim] = useState("");
+  async function carregarDashboard() {
+    setCarregando(true);
+
+    const [alunosRes, matriculasRes, presencasRes] = await Promise.all([
+      supabase.from("alunos").select("id, nome_completo"),
+      supabase
+        .from("matriculas")
+        .select("id, aluno_id, curso_id, turma_id, data_matricula, alunos(nome_completo)"),
+      supabase
+        .from("presencas")
+        .select("id, aluno_id, turma_id, curso_id, status, data_hora")
+        .order("data_hora", { ascending: false }),
+    ]);
+
+    if (alunosRes.data) setAlunos(alunosRes.data);
+    if (matriculasRes.data) setMatriculas(matriculasRes.data as Matricula[]);
+    if (presencasRes.data) setPresencas(presencasRes.data as Presenca[]);
+    setCarregando(false);
+  }
+
+  useEffect(() => {
+    carregarDashboard();
+  }, []);
 
   const turmasFiltradas = useMemo(() => {
-    if (!filtroCurso) return turmas;
-    return turmas.filter((t) => t.curso_id === filtroCurso);
-  }, [turmas, filtroCurso]);
+    return turmas.filter((turma) => {
+      const curso = relacao(turma.cursos);
+      const texto = `${turma.nome} ${curso?.titulo || ""}`.toLowerCase();
+
+      return (
+        (!busca || texto.includes(busca.toLowerCase())) &&
+        (!cursoFiltro || turma.curso_id === cursoFiltro) &&
+        (!turmaFiltro || turma.id === turmaFiltro)
+      );
+    });
+  }, [turmas, busca, cursoFiltro, turmaFiltro]);
 
   const presentes = useMemo(
-    () => presencas.filter((p) => (p.status || "presente").toLowerCase() === "presente").length,
+    () => presencas.filter((p) => statusPresenca(p.status) === "presente").length,
     [presencas]
   );
 
-  const faltas = useMemo(
-    () => presencas.filter((p) => (p.status || "").toLowerCase() === "falta").length,
-    [presencas]
-  );
+  const faltas = presencas.length - presentes;
+  const frequenciaGeral = percentual(presentes, presencas.length);
 
-  const percentualPresenca = useMemo(() => {
-    if (!presencas.length) return 0;
-    return Math.round((presentes / presencas.length) * 100);
-  }, [presencas.length, presentes]);
-
-  const alunosUnicos = useMemo(
-    () => new Set(presencas.map((p) => p.aluno_id)).size,
-    [presencas]
-  );
-
-  const buscarHistorico = async () => {
-    setIsLoading(true);
-    setBuscou(true);
-
-    try {
-      let query = supabase
-        .from("presencas")
-        .select(
-          "id, aluno_id, curso_id, turma_id, data_hora, metodo, operador_id, status, alunos(nome_completo, cpf), cursos(titulo), turmas(nome), operadores(nome)"
-        )
-        .order("data_hora", { ascending: false })
-        .limit(2000);
-
-      if (filtroCurso) {
-        query = query.eq("curso_id", filtroCurso);
-      }
-
-      if (filtroTurma) {
-        query = query.eq("turma_id", filtroTurma);
-      }
-
-      if (filtroDataInicio) {
-        query = query.gte("data_hora", `${filtroDataInicio}T00:00:00`);
-      }
-
-      if (filtroDataFim) {
-        query = query.lte("data_hora", `${filtroDataFim}T23:59:59.999`);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error("Erro ao buscar histórico:", error);
-        alert("Erro ao buscar histórico: " + error.message);
-        setPresencas([]);
-        return;
-      }
-
-      let resultados = (data || []) as unknown as PresencaRegistro[];
-
-      if (filtroNome.trim()) {
-        const termo = filtroNome.trim().toLowerCase();
-
-        resultados = resultados.filter((p) =>
-          pegarRelacao(p.alunos)?.nome_completo?.toLowerCase().includes(termo)
-        );
-      }
-
-      if (filtroCpf.trim()) {
-        const cpfLimpo = filtroCpf.replace(/\D/g, "");
-
-        resultados = resultados.filter((p) =>
-          (pegarRelacao(p.alunos)?.cpf || "")
-            .replace(/\D/g, "")
-            .includes(cpfLimpo)
-        );
-      }
-
-      if (filtroStatus) {
-        resultados = resultados.filter((p) => {
-          const status = (p.status || "presente").toLowerCase();
-          return status === filtroStatus;
-        });
-      }
-
-      setPresencas(resultados);
-    } catch (err: any) {
-      console.error("Erro:", err);
-      alert("Erro inesperado: " + (err?.message || "Erro desconhecido."));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const limparFiltros = () => {
-    setFiltroCpf("");
-    setFiltroNome("");
-    setFiltroCurso("");
-    setFiltroTurma("");
-    setFiltroStatus("");
-    setFiltroDataInicio("");
-    setFiltroDataFim("");
-    setPresencas([]);
-    setBuscou(false);
-  };
-
-  const formatDate = (iso: string) => {
-    return new Date(iso).toLocaleDateString("pt-BR");
-  };
-
-  const formatTime = (iso: string) => {
-    return new Date(iso).toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
+  const matriculadosPorTurma = useMemo(() => {
+    const mapa: Record<string, number> = {};
+    matriculas.forEach((m) => {
+      mapa[m.turma_id] = (mapa[m.turma_id] || 0) + 1;
     });
-  };
+    return mapa;
+  }, [matriculas]);
 
-  const formatCPF = (cpf: string | null) => {
-    if (!cpf) return "—";
+  const frequenciaPorTurma = useMemo(() => {
+    const mapa: Record<string, { presentes: number; faltas: number }> = {};
 
-    const d = cpf.replace(/\D/g, "");
-
-    if (d.length === 11) {
-      return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
-    }
-
-    return cpf;
-  };
-
-  const getStatus = (p: PresencaRegistro) => {
-    const status = (p.status || "presente").toLowerCase();
-
-    if (status === "falta") {
-      return {
-        label: "Falta",
-        className: "bg-red-50 text-red-700 border-red-200",
-        icon: <XCircle className="w-3.5 h-3.5" />,
-      };
-    }
-
-    return {
-      label: "Presente",
-      className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      icon: <CheckCircle2 className="w-3.5 h-3.5" />,
-    };
-  };
-
-  const exportarCSV = () => {
-    if (!presencas.length) {
-      alert("Não há registros para exportar.");
-      return;
-    }
-
-    const linhas = presencas.map((p) => {
-      const aluno = pegarRelacao(p.alunos);
-      const curso = pegarRelacao(p.cursos);
-      const turma = pegarRelacao(p.turmas);
-      const operador = pegarRelacao(p.operadores);
-
-      return [
-        aluno?.nome_completo || "",
-        formatCPF(aluno?.cpf || null),
-        curso?.titulo || "",
-        turma?.nome || "",
-        formatDate(p.data_hora),
-        formatTime(p.data_hora),
-        (p.status || "presente").toLowerCase() === "falta"
-          ? "Falta"
-          : "Presente",
-        operador?.nome || "",
-        p.metodo || "",
-      ];
+    presencas.forEach((p) => {
+      if (!mapa[p.turma_id]) mapa[p.turma_id] = { presentes: 0, faltas: 0 };
+      if (statusPresenca(p.status) === "presente") mapa[p.turma_id].presentes++;
+      else mapa[p.turma_id].faltas++;
     });
 
-    const cabecalho = [
-      "Participante",
-      "CPF",
-      "Curso",
-      "Turma",
-      "Data",
-      "Horário",
-      "Status",
-      "Operador",
-      "Método",
-    ];
+    return mapa;
+  }, [presencas]);
 
-    const csv = [cabecalho, ...linhas]
-      .map((linha) =>
-        linha
-          .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
-          .join(";")
+  const ultimasAtividades = useMemo(() => {
+    return [...presencas]
+      .sort(
+        (a, b) =>
+          new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime()
       )
-      .join("\n");
+      .slice(0, 6)
+      .map((p) => {
+        const aluno = alunos.find((a) => a.id === p.aluno_id);
+        const turma = turmas.find((t) => t.id === p.turma_id);
+        const curso = cursos.find((c) => c.id === p.curso_id);
 
-    const blob = new Blob(["\ufeff" + csv], {
-      type: "text/csv;charset=utf-8;",
-    });
+        return {
+          ...p,
+          aluno: aluno?.nome_completo || "Aluno não identificado",
+          turma: turma?.nome || "Turma não identificada",
+          curso: curso?.titulo || "Curso não identificado",
+        };
+      });
+  }, [presencas, alunos, turmas, cursos]);
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `relatorio-frequencia-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
+  const turmaSelecionada = turmaFiltro
+    ? turmas.find((t) => t.id === turmaFiltro)
+    : null;
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Cabeçalho */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">
-          Relatório de Frequência
-        </h1>
-
-        <p className="text-sm text-slate-500 mt-1">
-          Consulte presenças e faltas por participante, curso, turma e período.
-        </p>
-      </div>
-
-      {/* Filtros */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-5">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <Filter className="w-4 h-4" />
-          Filtros de Busca
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Nome */}
+    <div className="min-h-full bg-slate-50 px-4 pb-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Nome do Participante
-            </label>
-
-            <div className="relative">
-              <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-
-              <input
-                type="text"
-                value={filtroNome}
-                onChange={(e) => setFiltroNome(e.target.value)}
-                placeholder="Buscar por nome..."
-                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-              />
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-emerald-600">
+              <TrendingUp className="h-4 w-4" />
+              Visão geral
             </div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+              Dashboard
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Acompanhe turmas, matrículas, alunos e frequência em um só lugar.
+            </p>
           </div>
-
-          {/* CPF */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              CPF do Participante
-            </label>
-
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-
-              <input
-                type="text"
-                value={filtroCpf}
-                onChange={(e) => setFiltroCpf(e.target.value)}
-                placeholder="Buscar por CPF..."
-                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-              />
-            </div>
-          </div>
-
-          {/* Curso */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Curso
-            </label>
-
-            <select
-              value={filtroCurso}
-              onChange={(e) => {
-                setFiltroCurso(e.target.value);
-                setFiltroTurma("");
-              }}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-            >
-              <option value="">Todos os cursos</option>
-
-              {cursos.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.titulo}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Turma */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Turma
-            </label>
-
-            <select
-              value={filtroTurma}
-              onChange={(e) => setFiltroTurma(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-            >
-              <option value="">Todas as turmas</option>
-
-              {turmasFiltradas.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nome}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Status */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Status
-            </label>
-
-            <select
-              value={filtroStatus}
-              onChange={(e) => setFiltroStatus(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-            >
-              <option value="">Todos</option>
-              <option value="presente">Presentes</option>
-              <option value="falta">Faltas</option>
-            </select>
-          </div>
-
-          {/* Data início */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Data Início
-            </label>
-
-            <input
-              type="date"
-              value={filtroDataInicio}
-              onChange={(e) => setFiltroDataInicio(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-            />
-          </div>
-
-          {/* Data fim */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Data Fim
-            </label>
-
-            <input
-              type="date"
-              value={filtroDataFim}
-              onChange={(e) => setFiltroDataFim(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-3 pt-1">
-          <button
-            onClick={buscarHistorico}
-            disabled={isLoading}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            <Search className="w-4 h-4" />
-            {isLoading ? "Buscando..." : "Buscar"}
-          </button>
 
           <button
-            onClick={limparFiltros}
-            className="border border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
+            onClick={carregarDashboard}
+            disabled={carregando}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
           >
-            <RotateCcw className="w-4 h-4" />
-            Limpar
-          </button>
-
-          <button
-            onClick={exportarCSV}
-            disabled={!presencas.length}
-            className="border border-emerald-200 text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Exportar CSV
+            <RefreshCw className={`h-4 w-4 ${carregando ? "animate-spin" : ""}`} />
+            Atualizar dados
           </button>
         </div>
-      </div>
 
-      {/* Resumo */}
-      {buscou && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">
-                  Registros
-                </p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">
-                  {presencas.length}
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-slate-100">
-                <Users className="w-5 h-5 text-slate-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">
-                  Presentes
-                </p>
-                <p className="text-2xl font-bold text-emerald-700 mt-1">
-                  {presentes}
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-emerald-50">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-red-200 rounded-xl p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">
-                  Faltas
-                </p>
-                <p className="text-2xl font-bold text-red-700 mt-1">
-                  {faltas}
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-red-50">
-                <XCircle className="w-5 h-5 text-red-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-slate-500">
-                  Taxa de Presença
-                </p>
-                <p className="text-2xl font-bold text-blue-700 mt-1">
-                  {percentualPresenca}%
-                </p>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  {alunosUnicos} participante(s)
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-blue-50">
-                <Percent className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-          </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            icon={Users}
+            label="Alunos cadastrados"
+            value={alunos.length}
+            description="Pessoas no sistema"
+          />
+          <MetricCard
+            icon={GraduationCap}
+            label="Matrículas"
+            value={matriculas.length}
+            description={`${turmas.length} turmas cadastradas`}
+          />
+          <MetricCard
+            icon={BookOpen}
+            label="Turmas"
+            value={turmas.length}
+            description={`${cursos.length} cursos disponíveis`}
+          />
+          <MetricCard
+            icon={ClipboardList}
+            label="Frequência geral"
+            value={`${frequenciaGeral}%`}
+            description={`${presentes} presenças • ${faltas} faltas`}
+            destaque
+          />
         </div>
-      )}
 
-      {/* Resultados */}
-      {buscou && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-slate-800">
-                Registros de frequência
-              </p>
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-bold text-slate-900">Turmas</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Ocupação e desempenho de frequência por turma.
+                  </p>
+                </div>
 
-              <p className="text-xs text-slate-500 mt-0.5">
-                {presencas.length} registro(s) encontrado(s)
-              </p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={busca}
+                      onChange={(e) => setBusca(e.target.value)}
+                      placeholder="Buscar turma..."
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 sm:w-48"
+                    />
+                  </div>
+                  <select
+                    value={cursoFiltro}
+                    onChange={(e) => {
+                      setCursoFiltro(e.target.value);
+                      setTurmaFiltro("");
+                    }}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+                  >
+                    <option value="">Todos os cursos</option>
+                    {cursos.map((curso) => (
+                      <option key={curso.id} value={curso.id}>
+                        {curso.titulo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
-            {presencas.length > 0 && (
-              <div className="flex items-center gap-3 text-xs">
-                <span className="flex items-center gap-1.5 text-emerald-700">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {presentes} presentes
-                </span>
+            <div className="divide-y divide-slate-100">
+              {carregando ? (
+                <div className="p-10 text-center text-sm text-slate-400">
+                  Carregando indicadores...
+                </div>
+              ) : turmasFiltradas.length === 0 ? (
+                <div className="p-10 text-center">
+                  <BookOpen className="mx-auto h-8 w-8 text-slate-300" />
+                  <p className="mt-2 text-sm font-medium text-slate-600">
+                    Nenhuma turma encontrada.
+                  </p>
+                </div>
+              ) : (
+                turmasFiltradas.map((turma) => {
+                  const curso = relacao(turma.cursos) || cursos.find((c) => c.id === turma.curso_id);
+                  const ocupadas = matriculadosPorTurma[turma.id] || 0;
+                  const limite = turma.vagas || 10;
+                  const freq = frequenciaPorTurma[turma.id] || { presentes: 0, faltas: 0 };
+                  const totalFreq = freq.presentes + freq.faltas;
+                  const percentualFreq = percentual(freq.presentes, totalFreq);
+                  const ocupacao = percentual(ocupadas, limite);
 
-                <span className="flex items-center gap-1.5 text-red-700">
-                  <XCircle className="w-3.5 h-3.5" />
-                  {faltas} faltas
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-white text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-5 py-3 font-semibold">Participante</th>
-                  <th className="px-5 py-3 font-semibold">CPF</th>
-                  <th className="px-5 py-3 font-semibold">Curso</th>
-                  <th className="px-5 py-3 font-semibold">Turma</th>
-                  <th className="px-5 py-3 font-semibold">Data</th>
-                  <th className="px-5 py-3 font-semibold">Horário</th>
-                  <th className="px-5 py-3 font-semibold">Status</th>
-                  <th className="px-5 py-3 font-semibold">Operador</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                {presencas.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-5 py-12 text-center text-slate-500"
+                  return (
+                    <button
+                      key={turma.id}
+                      onClick={() => setTurmaFiltro(turma.id)}
+                      className={`w-full p-5 text-left transition hover:bg-slate-50 ${
+                        turmaSelecionada?.id === turma.id ? "bg-emerald-50/60" : ""
+                      }`}
                     >
-                      Nenhum registro encontrado com os filtros informados.
-                    </td>
-                  </tr>
-                ) : (
-                  presencas.map((p) => {
-                    const aluno = pegarRelacao(p.alunos);
-                    const curso = pegarRelacao(p.cursos);
-                    const turma = pegarRelacao(p.turmas);
-                    const operador = pegarRelacao(p.operadores);
-                    const status = getStatus(p);
-
-                    return (
-                      <tr
-                        key={p.id}
-                        className="hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="px-5 py-3 text-slate-900 font-medium">
-                          {aluno?.nome_completo || "—"}
-                        </td>
-
-                        <td className="px-5 py-3 text-slate-500">
-                          {formatCPF(aluno?.cpf || null)}
-                        </td>
-
-                        <td className="px-5 py-3 text-slate-600">
-                          {curso?.titulo || "—"}
-                        </td>
-
-                        <td className="px-5 py-3 text-slate-600">
-                          {turma?.nome || "—"}
-                        </td>
-
-                        <td className="px-5 py-3 text-slate-600">
-                          <div className="flex items-center gap-1.5 whitespace-nowrap">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            {formatDate(p.data_hora)}
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className="truncate font-semibold text-slate-900">
+                              {turma.nome}
+                            </div>
+                            <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300" />
                           </div>
-                        </td>
-
-                        <td className="px-5 py-3 text-slate-600">
-                          <div className="flex items-center gap-1.5 whitespace-nowrap">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            {formatTime(p.data_hora)}
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                            <span>{curso?.titulo || "Curso não informado"}</span>
+                            {turma.horario && <span>{turma.horario}</span>}
+                            {turma.turno && <span>{turma.turno}</span>}
                           </div>
-                        </td>
+                        </div>
 
-                        <td className="px-5 py-3">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold ${status.className}`}
-                          >
-                            {status.icon}
-                            {status.label}
-                          </span>
-                        </td>
+                        <div className="w-full sm:max-w-xs">
+                          <div className="mb-1.5 flex justify-between text-xs">
+                            <span className="text-slate-500">Alunos</span>
+                            <span className="font-semibold text-slate-700">
+                              {ocupadas}/{limite}
+                            </span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-emerald-500 transition-all"
+                              style={{ width: `${Math.min(100, ocupacao)}%` }}
+                            />
+                          </div>
+                          <div className="mt-2 flex justify-between text-xs">
+                            <span className="text-slate-400">
+                              {totalFreq} registros de frequência
+                            </span>
+                            <span className="font-semibold text-slate-700">
+                              {totalFreq ? `${percentualFreq}% presença` : "Sem registros"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </section>
 
-                        <td className="px-5 py-3 text-slate-500">
-                          {operador?.nome || "—"}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 p-5">
+              <h2 className="font-bold text-slate-900">Resumo da frequência</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Distribuição dos registros de presença e falta.
+              </p>
+            </div>
+
+            <div className="p-5">
+              <div className="flex items-center justify-center">
+                <div className="relative flex h-40 w-40 items-center justify-center rounded-full border-[14px] border-emerald-100">
+                  <div
+                    className="absolute inset-[-14px] rounded-full border-[14px] border-transparent border-t-emerald-500 border-r-emerald-500"
+                    style={{
+                      transform: `rotate(${Math.max(0, frequenciaGeral * 3.6 - 90)}deg)`,
+                    }}
+                  />
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-slate-900">
+                      {frequenciaGeral}%
+                    </div>
+                    <div className="text-xs text-slate-400">presença</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-emerald-50 p-4">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  <div className="mt-2 text-2xl font-bold text-emerald-700">{presentes}</div>
+                  <div className="text-xs text-emerald-700/70">Presenças</div>
+                </div>
+                <div className="rounded-xl bg-red-50 p-4">
+                  <XCircle className="h-5 w-5 text-red-500" />
+                  <div className="mt-2 text-2xl font-bold text-red-600">{faltas}</div>
+                  <div className="text-xs text-red-600/70">Faltas</div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <UserCheck className="h-4 w-4 text-emerald-600" />
+                  Alunos matriculados
+                </div>
+                <div className="mt-1 text-2xl font-bold text-slate-900">
+                  {matriculas.length}
+                </div>
+                <div className="text-xs text-slate-400">
+                  Total de vínculos com turmas
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
-      )}
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 p-5">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-emerald-600" />
+              <div>
+                <h2 className="font-bold text-slate-900">Atividade recente</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Últimos registros de frequência realizados no sistema.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {ultimasAtividades.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-400">
+              Ainda não existem registros de frequência.
+            </div>
+          ) : (
+            <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+              {ultimasAtividades.map((item) => {
+                const presente = statusPresenca(item.status) === "presente";
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-slate-100 bg-slate-50/70 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-800">
+                          {item.aluno}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-slate-500">
+                          {item.turma} • {item.curso}
+                        </div>
+                      </div>
+
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                          presente
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {presente ? "Presença" : "Falta"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      {formatarData(item.data_hora)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {turmaSelecionada && (
+          <section className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                  Filtro ativo
+                </div>
+                <h3 className="mt-1 text-lg font-bold text-slate-900">
+                  {turmaSelecionada.nome}
+                </h3>
+              </div>
+              <button
+                onClick={() => setTurmaFiltro("")}
+                className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+              >
+                Ver todas as turmas
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  description,
+  destaque = false,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: string | number;
+  description: string;
+  destaque?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-5 shadow-sm ${
+        destaque
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-slate-200 bg-white"
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div
+          className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+            destaque ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+        <TrendingUp className={`h-4 w-4 ${destaque ? "text-emerald-500" : "text-slate-300"}`} />
+      </div>
+      <div className="mt-5 text-3xl font-bold tracking-tight text-slate-900">{value}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-700">{label}</div>
+      <div className="mt-1 text-xs text-slate-400">{description}</div>
     </div>
   );
 }
