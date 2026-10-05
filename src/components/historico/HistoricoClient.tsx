@@ -9,27 +9,14 @@ import {
   Clock,
   User,
   Users,
-  UsersRound,
   CheckCircle2,
   XCircle,
   Percent,
   Download,
   BookOpen,
-  GraduationCap,
-  TrendingUp,
-  ChevronDown,
-  School,
-  AlertTriangle,
   BarChart3,
-  ClipboardList,
-  RefreshCw,
 } from "lucide-react";
-
 import { supabase } from "@/lib/supabase";
-
-/* =========================================================
-   TIPOS
-========================================================= */
 
 type Curso = {
   id: string;
@@ -40,37 +27,6 @@ type Turma = {
   id: string;
   nome: string;
   curso_id: string;
-
-  // Campos usados pelo dashboard
-  horario?: string | null;
-  turno?: string | null;
-  vagas?: number | null;
-
-  cursos?: {
-    titulo: string;
-  } | {
-    titulo: string;
-  }[] | null;
-};
-
-type Aluno = {
-  id: string;
-  nome_completo: string;
-  cpf?: string | null;
-};
-
-type Matricula = {
-  id: string;
-  aluno_id: string;
-  curso_id: string;
-  turma_id: string;
-  data_matricula?: string | null;
-
-  alunos?:
-    | {
-        nome_completo: string;
-      }[]
-    | null;
 };
 
 type PresencaRegistro = {
@@ -122,68 +78,24 @@ type PresencaRegistro = {
     | null;
 };
 
-type AlunoMultiplasTurmas = {
-  id: string;
-  nome: string;
-  turmas: {
-    id: string;
-    nome: string;
-    curso: string;
-    horario: string;
-  }[];
-};
-
-type ResumoTurma = {
-  id: string;
-  nome: string;
-  curso: string;
-  cursoId: string;
-  horario: string;
-  turno: string;
-  vagas: number;
-  matriculados: number;
-  ocupacao: number;
-  presentes: number;
-  faltas: number;
-  registros: number;
-  frequencia: number;
-};
-
-type AtividadeRecente = {
-  id: string;
-  aluno: string;
-  turma: string;
-  curso: string;
-  data: string;
-  hora: string;
-  status: "presente" | "falta";
-};
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
-function pegarRelacao<T>(
-  valor: T | T[] | null | undefined
-): T | null {
+function pegarRelacao<T>(valor: T | T[] | null | undefined): T | null {
   if (!valor) return null;
 
-  return Array.isArray(valor)
-    ? valor[0] || null
-    : valor;
+  if (Array.isArray(valor)) {
+    return valor.length > 0 ? valor[0] : null;
+  }
+
+  return valor;
 }
 
-function normalizarStatus(
-  status: string | null | undefined
-): "presente" | "falta" {
-  const valor = String(status || "")
-    .toLowerCase()
-    .trim();
+function normalizarStatus(status: string | null | undefined) {
+  const valor = (status || "presente").toLowerCase().trim();
 
   if (
     valor === "falta" ||
     valor === "faltou" ||
-    valor === "ausente"
+    valor === "ausente" ||
+    valor === "absence"
   ) {
     return "falta";
   }
@@ -191,30 +103,9 @@ function normalizarStatus(
   return "presente";
 }
 
-function ehPresenca(
-  status: string | null | undefined
-) {
-  return normalizarStatus(status) === "presente";
-}
-
-function ehFalta(
-  status: string | null | undefined
-) {
-  return normalizarStatus(status) === "falta";
-}
-
-function percentual(
-  valor: number,
-  total: number
-) {
-  if (!total) return 0;
-
-  return Math.round(
-    (valor / total) * 100
-  );
-}
-
 function formatarData(data: string) {
+  if (!data) return "—";
+
   const valor = new Date(data);
 
   if (Number.isNaN(valor.getTime())) {
@@ -225,76 +116,40 @@ function formatarData(data: string) {
 }
 
 function formatarHora(data: string) {
+  if (!data) return "—";
+
   const valor = new Date(data);
 
   if (Number.isNaN(valor.getTime())) {
     return "—";
   }
 
-  return valor.toLocaleTimeString(
-    "pt-BR",
-    {
-      hour: "2-digit",
-      minute: "2-digit",
-    }
-  );
+  return valor.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-function formatarCPF(
-  cpf: string | null
-) {
+function formatarCPF(cpf: string | null | undefined) {
   if (!cpf) return "—";
 
-  const valor = cpf.replace(/\D/g, "");
+  const numeros = cpf.replace(/\D/g, "");
 
-  if (valor.length === 11) {
-    return `${valor.slice(
-      0,
-      3
-    )}.${valor.slice(3, 6)}.${valor.slice(
-      6,
-      9
-    )}-${valor.slice(9, 11)}`;
+  if (numeros.length === 11) {
+    return `${numeros.slice(0, 3)}.${numeros.slice(
+      3,
+      6
+    )}.${numeros.slice(6, 9)}-${numeros.slice(9, 11)}`;
   }
 
   return cpf;
 }
 
-function obterHorarioTurma(
-  turma: Turma
-) {
-  const horario = String(
-    turma.horario || ""
-  ).trim();
+function percentual(presente: number, total: number) {
+  if (!total) return 0;
 
-  const turno = String(
-    turma.turno || ""
-  ).trim();
-
-  if (horario) {
-    return horario;
-  }
-
-  if (turno) {
-    return turno;
-  }
-
-  return "Horário não cadastrado";
+  return Math.round((presente / total) * 100);
 }
-
-function obterTurno(
-  turma: Turma
-) {
-  if (turma.turno?.trim()) {
-    return turma.turno;
-  }
-
-  return "Turno não informado";
-}
-
-/* =========================================================
-   COMPONENTE
-========================================================= */
 
 export default function HistoricoClient({
   cursos,
@@ -303,184 +158,210 @@ export default function HistoricoClient({
   cursos: Curso[];
   turmas: Turma[];
 }) {
-  /* =======================================================
-     ESTADOS DO RELATÓRIO ORIGINAL
-  ======================================================= */
+  const [presencas, setPresencas] = useState<PresencaRegistro[]>([]);
 
-  const [
-    presencas,
-    setPresencas,
-  ] = useState<PresencaRegistro[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [buscou, setBuscou] = useState(false);
 
-  const [
-    isLoading,
-    setIsLoading,
-  ] = useState(false);
-
-  const [
-    buscou,
-    setBuscou,
-  ] = useState(false);
-
-  const [
-    filtroCpf,
-    setFiltroCpf,
-  ] = useState("");
-
-  const [
-    filtroNome,
-    setFiltroNome,
-  ] = useState("");
-
-  const [
-    filtroCurso,
-    setFiltroCurso,
-  ] = useState("");
-
-  const [
-    filtroTurma,
-    setFiltroTurma,
-  ] = useState("");
-
-  const [
-    filtroStatus,
-    setFiltroStatus,
-  ] = useState("");
-
-  const [
-    filtroDataInicio,
-    setFiltroDataInicio,
-  ] = useState("");
-
-  const [
-    filtroDataFim,
-    setFiltroDataFim,
-  ] = useState("");
-
-  /* =======================================================
-     ESTADOS DO DASHBOARD
-  ======================================================= */
-
-  const [
-    alunos,
-    setAlunos,
-  ] = useState<Aluno[]>([]);
-
-  const [
-    matriculas,
-    setMatriculas,
-  ] = useState<Matricula[]>([]);
-
-  const [
-    carregandoDashboard,
-    setCarregandoDashboard,
-  ] = useState(false);
-
-  const [
-    dashboardCarregado,
-    setDashboardCarregado,
-  ] = useState(false);
-
-  const [
-    mostrarAlunosMultiplasTurmas,
-    setMostrarAlunosMultiplasTurmas,
-  ] = useState(false);
-
-  const [
-    filtroHorario,
-    setFiltroHorario,
-  ] = useState("");
-
-  const [
-    turmaDashboardSelecionada,
-    setTurmaDashboardSelecionada,
-  ] = useState("");
-
-  /* =======================================================
-     TURMAS DO FILTRO
-  ======================================================= */
+  const [filtroCpf, setFiltroCpf] = useState("");
+  const [filtroNome, setFiltroNome] = useState("");
+  const [filtroCurso, setFiltroCurso] = useState("");
+  const [filtroTurma, setFiltroTurma] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroDataInicio, setFiltroDataInicio] = useState("");
+  const [filtroDataFim, setFiltroDataFim] = useState("");
 
   const turmasFiltradas = useMemo(() => {
     if (!filtroCurso) {
       return turmas;
     }
 
-    return turmas.filter(
-      (turma) =>
-        turma.curso_id === filtroCurso
+    return turmas.filter((turma) => turma.curso_id === filtroCurso);
+  }, [turmas, filtroCurso]);
+
+  const presentes = useMemo(() => {
+    return presencas.filter(
+      (registro) => normalizarStatus(registro.status) === "presente"
+    ).length;
+  }, [presencas]);
+
+  const faltas = useMemo(() => {
+    return presencas.filter(
+      (registro) => normalizarStatus(registro.status) === "falta"
+    ).length;
+  }, [presencas]);
+
+  const totalRegistros = presencas.length;
+
+  const alunosUnicos = useMemo(() => {
+    return new Set(presencas.map((registro) => registro.aluno_id)).size;
+  }, [presencas]);
+
+  const percentualPresenca = useMemo(() => {
+    return percentual(presentes, totalRegistros);
+  }, [presentes, totalRegistros]);
+
+  const cursosComRegistros = useMemo(() => {
+    return new Set(presencas.map((registro) => registro.curso_id)).size;
+  }, [presencas]);
+
+  const turmasComRegistros = useMemo(() => {
+    return new Set(presencas.map((registro) => registro.turma_id)).size;
+  }, [presencas]);
+
+  const resumoPorCurso = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        id: string;
+        nome: string;
+        presentes: number;
+        faltas: number;
+        total: number;
+      }
+    >();
+
+    presencas.forEach((registro) => {
+      const curso = pegarRelacao(registro.cursos);
+
+      const nomeCurso =
+        curso?.titulo ||
+        cursos.find((item) => item.id === registro.curso_id)?.titulo ||
+        "Curso não informado";
+
+      const atual = mapa.get(registro.curso_id);
+
+      if (!atual) {
+        mapa.set(registro.curso_id, {
+          id: registro.curso_id,
+          nome: nomeCurso,
+          presentes:
+            normalizarStatus(registro.status) === "presente" ? 1 : 0,
+          faltas: normalizarStatus(registro.status) === "falta" ? 1 : 0,
+          total: 1,
+        });
+      } else {
+        atual.total += 1;
+
+        if (normalizarStatus(registro.status) === "presente") {
+          atual.presentes += 1;
+        } else {
+          atual.faltas += 1;
+        }
+      }
+    });
+
+    return Array.from(mapa.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome)
     );
-  }, [
-    turmas,
-    filtroCurso,
-  ]);
+  }, [presencas, cursos]);
 
-  /* =======================================================
-     BUSCA DO DASHBOARD
-  ======================================================= */
-
-  const carregarDashboard = async () => {
-    setCarregandoDashboard(true);
-
-    try {
-      const [
-        alunosRes,
-        matriculasRes,
-      ] = await Promise.all([
-        supabase
-          .from("alunos")
-          .select(
-            "id, nome_completo, cpf"
-          ),
-
-        supabase
-          .from("matriculas")
-          .select(
-            "id, aluno_id, curso_id, turma_id, data_matricula, alunos(nome_completo)"
-          ),
-      ]);
-
-      if (alunosRes.error) {
-        console.error(
-          "Erro ao carregar alunos:",
-          alunosRes.error
-        );
+  const resumoPorTurma = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        id: string;
+        nome: string;
+        curso: string;
+        presentes: number;
+        faltas: number;
+        total: number;
       }
+    >();
 
-      if (matriculasRes.error) {
-        console.error(
-          "Erro ao carregar matrículas:",
-          matriculasRes.error
-        );
+    presencas.forEach((registro) => {
+      const turma = pegarRelacao(registro.turmas);
+      const curso = pegarRelacao(registro.cursos);
+
+      const turmaBase = turmas.find(
+        (item) => item.id === registro.turma_id
+      );
+
+      const nomeTurma =
+        turma?.nome || turmaBase?.nome || "Turma não informada";
+
+      const nomeCurso =
+        curso?.titulo ||
+        cursos.find((item) => item.id === registro.curso_id)?.titulo ||
+        "Curso não informado";
+
+      const atual = mapa.get(registro.turma_id);
+
+      if (!atual) {
+        mapa.set(registro.turma_id, {
+          id: registro.turma_id,
+          nome: nomeTurma,
+          curso: nomeCurso,
+          presentes:
+            normalizarStatus(registro.status) === "presente" ? 1 : 0,
+          faltas: normalizarStatus(registro.status) === "falta" ? 1 : 0,
+          total: 1,
+        });
+      } else {
+        atual.total += 1;
+
+        if (normalizarStatus(registro.status) === "presente") {
+          atual.presentes += 1;
+        } else {
+          atual.faltas += 1;
+        }
       }
+    });
 
-      setAlunos(
-        (alunosRes.data ||
-          []) as Aluno[]
-      );
+    return Array.from(mapa.values()).sort(
+      (a, b) => b.total - a.total
+    );
+  }, [presencas, turmas, cursos]);
 
-      setMatriculas(
-        (matriculasRes.data ||
-          []) as Matricula[]
-      );
+  const alunosComMaisDeUmRegistro = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        id: string;
+        nome: string;
+        cpf: string | null;
+        total: number;
+        presentes: number;
+        faltas: number;
+        turmas: Set<string>;
+      }
+    >();
 
-      setDashboardCarregado(
-        true
-      );
-    } catch (error) {
-      console.error(
-        "Erro ao carregar dashboard:",
-        error
-      );
-    } finally {
-      setCarregandoDashboard(
-        false
-      );
-    }
-  };
+    presencas.forEach((registro) => {
+      const aluno = pegarRelacao(registro.alunos);
 
-  /* =======================================================
-     BUSCAR HISTÓRICO
-  ======================================================= */
+      const nome = aluno?.nome_completo || "Participante não informado";
+
+      const atual = mapa.get(registro.aluno_id);
+
+      if (!atual) {
+        mapa.set(registro.aluno_id, {
+          id: registro.aluno_id,
+          nome,
+          cpf: aluno?.cpf || null,
+          total: 1,
+          presentes:
+            normalizarStatus(registro.status) === "presente" ? 1 : 0,
+          faltas:
+            normalizarStatus(registro.status) === "falta" ? 1 : 0,
+          turmas: new Set([registro.turma_id]),
+        });
+      } else {
+        atual.total += 1;
+        atual.turmas.add(registro.turma_id);
+
+        if (normalizarStatus(registro.status) === "presente") {
+          atual.presentes += 1;
+        } else {
+          atual.faltas += 1;
+        }
+      }
+    });
+
+    return Array.from(mapa.values())
+      .filter((aluno) => aluno.total > 1)
+      .sort((a, b) => b.total - a.total);
+  }, [presencas]);
 
   const buscarHistorico = async () => {
     setIsLoading(true);
@@ -498,17 +379,11 @@ export default function HistoricoClient({
         .limit(5000);
 
       if (filtroCurso) {
-        query = query.eq(
-          "curso_id",
-          filtroCurso
-        );
+        query = query.eq("curso_id", filtroCurso);
       }
 
       if (filtroTurma) {
-        query = query.eq(
-          "turma_id",
-          filtroTurma
-        );
+        query = query.eq("turma_id", filtroTurma);
       }
 
       if (filtroDataInicio) {
@@ -525,20 +400,13 @@ export default function HistoricoClient({
         );
       }
 
-      const {
-        data,
-        error,
-      } = await query;
+      const { data, error } = await query;
 
       if (error) {
-        console.error(
-          "Erro ao buscar histórico:",
-          error
-        );
+        console.error("Erro ao buscar histórico:", error);
 
         alert(
-          "Erro ao buscar histórico: " +
-            error.message
+          "Erro ao buscar histórico: " + error.message
         );
 
         setPresencas([]);
@@ -546,96 +414,62 @@ export default function HistoricoClient({
       }
 
       let resultados =
-        (data ||
-          []) as unknown as PresencaRegistro[];
-
-      /* FILTRO POR NOME */
+        (data || []) as unknown as PresencaRegistro[];
 
       if (filtroNome.trim()) {
-        const termo =
-          filtroNome
-            .trim()
-            .toLowerCase();
+        const termo = filtroNome
+          .trim()
+          .toLowerCase();
 
-        resultados =
-          resultados.filter(
-            (registro) =>
-              pegarRelacao(
-                registro.alunos
-              )
-                ?.nome_completo?.toLowerCase()
-                .includes(termo)
+        resultados = resultados.filter((registro) => {
+          const aluno = pegarRelacao(registro.alunos);
+
+          return (
+            aluno?.nome_completo
+              ?.toLowerCase()
+              .includes(termo) || false
           );
+        });
       }
 
-      /* FILTRO POR CPF */
-
       if (filtroCpf.trim()) {
-        const cpfLimpo =
-          filtroCpf.replace(
+        const cpfLimpo = filtroCpf.replace(/\D/g, "");
+
+        resultados = resultados.filter((registro) => {
+          const aluno = pegarRelacao(registro.alunos);
+
+          const cpf = (aluno?.cpf || "").replace(
             /\D/g,
             ""
           );
 
-        resultados =
-          resultados.filter(
-            (registro) =>
-              (
-                pegarRelacao(
-                  registro.alunos
-                )?.cpf || ""
-              )
-                .replace(
-                  /\D/g,
-                  ""
-                )
-                .includes(cpfLimpo)
-          );
+          return cpf.includes(cpfLimpo);
+        });
       }
-
-      /* FILTRO POR STATUS */
 
       if (filtroStatus) {
-        resultados =
-          resultados.filter(
-            (registro) =>
-              normalizarStatus(
-                registro.status
-              ) ===
-              filtroStatus
+        resultados = resultados.filter((registro) => {
+          return (
+            normalizarStatus(registro.status) ===
+            filtroStatus
           );
+        });
       }
 
-      setPresencas(
-        resultados
-      );
-
-      /*
-       * Carrega os dados do dashboard
-       * também quando o usuário pesquisa.
-       */
-      if (!dashboardCarregado) {
-        await carregarDashboard();
-      }
+      setPresencas(resultados);
     } catch (error: any) {
-      console.error(
-        "Erro inesperado:",
-        error
-      );
+      console.error("Erro inesperado:", error);
 
       alert(
         "Erro inesperado: " +
-          (error?.message ||
-            "Erro desconhecido.")
+          (error?.message || "Erro desconhecido.")
       );
+
+      setPresencas([]);
     } finally {
       setIsLoading(false);
     }
   };
-
-  /* =======================================================
-     LIMPAR FILTROS
-  ======================================================= */
 
   const limparFiltros = () => {
     setFiltroCpf("");
@@ -650,591 +484,9 @@ export default function HistoricoClient({
     setBuscou(false);
   };
 
-  /* =======================================================
-     INDICADORES DO RELATÓRIO
-  ======================================================= */
-
-  const presentes = useMemo(
-    () =>
-      presencas.filter(
-        (p) =>
-          ehPresenca(p.status)
-      ).length,
-    [presencas]
-  );
-
-  const faltas = useMemo(
-    () =>
-      presencas.filter(
-        (p) =>
-          ehFalta(p.status)
-      ).length,
-    [presencas]
-  );
-
-  const percentualPresenca =
-    useMemo(() => {
-      return percentual(
-        presentes,
-        presencas.length
-      );
-    }, [
-      presentes,
-      presencas.length,
-    ]);
-
-  const alunosUnicos =
-    useMemo(() => {
-      return new Set(
-        presencas.map(
-          (p) => p.aluno_id
-        )
-      ).size;
-    }, [presencas]);
-
-  /* =======================================================
-     ALUNOS EM MAIS DE UMA TURMA
-  ======================================================= */
-
-  const alunosMultiplasTurmas =
-    useMemo<
-      AlunoMultiplasTurmas[]
-    >(() => {
-      const resultado: AlunoMultiplasTurmas[] =
-        [];
-
-      alunos.forEach(
-        (aluno) => {
-          const matriculasAluno =
-            matriculas.filter(
-              (matricula) =>
-                matricula.aluno_id ===
-                aluno.id
-            );
-
-          const turmaIds =
-            Array.from(
-              new Set(
-                matriculasAluno.map(
-                  (matricula) =>
-                    matricula.turma_id
-                )
-              )
-            );
-
-          if (
-            turmaIds.length <= 1
-          ) {
-            return;
-          }
-
-          const turmasAluno =
-            turmaIds
-              .map(
-                (turmaId) => {
-                  const turma =
-                    turmas.find(
-                      (item) =>
-                        item.id ===
-                        turmaId
-                    );
-
-                  if (!turma) {
-                    return null;
-                  }
-
-                  const curso =
-                    cursos.find(
-                      (item) =>
-                        item.id ===
-                        turma.curso_id
-                    );
-
-                  return {
-                    id: turma.id,
-                    nome: turma.nome,
-                    curso:
-                      curso?.titulo ||
-                      pegarRelacao(
-                        turma.cursos
-                      )?.titulo ||
-                      "Curso não informado",
-                    horario:
-                      obterHorarioTurma(
-                        turma
-                      ),
-                  };
-                }
-              )
-              .filter(
-                (
-                  item
-                ): item is {
-                  id: string;
-                  nome: string;
-                  curso: string;
-                  horario: string;
-                } =>
-                  item !== null
-              );
-
-          if (
-            turmasAluno.length >
-            1
-          ) {
-            resultado.push({
-              id: aluno.id,
-              nome:
-                aluno.nome_completo,
-              turmas:
-                turmasAluno,
-            });
-          }
-        }
-      );
-
-      return resultado.sort(
-        (a, b) =>
-          a.nome.localeCompare(
-            b.nome,
-            "pt-BR"
-          )
-      );
-    }, [
-      alunos,
-      matriculas,
-      turmas,
-      cursos,
-    ]);
-
-  /* =======================================================
-     MATRÍCULAS POR TURMA
-  ======================================================= */
-
-  const matriculadosPorTurma =
-    useMemo(() => {
-      const mapa: Record<
-        string,
-        number
-      > = {};
-
-      matriculas.forEach(
-        (matricula) => {
-          mapa[
-            matricula.turma_id
-          ] =
-            (mapa[
-              matricula.turma_id
-            ] || 0) + 1;
-        }
-      );
-
-      return mapa;
-    }, [matriculas]);
-
-  /* =======================================================
-     FREQUÊNCIA POR TURMA
-  ======================================================= */
-
-  const frequenciaPorTurma =
-    useMemo(() => {
-      const mapa: Record<
-        string,
-        {
-          presentes: number;
-          faltas: number;
-        }
-      > = {};
-
-      presencas.forEach(
-        (registro) => {
-          if (
-            !mapa[
-              registro.turma_id
-            ]
-          ) {
-            mapa[
-              registro.turma_id
-            ] = {
-              presentes: 0,
-              faltas: 0,
-            };
-          }
-
-          if (
-            ehPresenca(
-              registro.status
-            )
-          ) {
-            mapa[
-              registro.turma_id
-            ].presentes++;
-          } else {
-            mapa[
-              registro.turma_id
-            ].faltas++;
-          }
-        }
-      );
-
-      return mapa;
-    }, [presencas]);
-
-  /* =======================================================
-     RESUMO COMPLETO DAS TURMAS
-  ======================================================= */
-
-  const resumoTurmas =
-    useMemo<ResumoTurma[]>(
-      () => {
-        return turmas
-          .map((turma) => {
-            const curso =
-              cursos.find(
-                (c) =>
-                  c.id ===
-                  turma.curso_id
-              );
-
-            const matriculados =
-              matriculadosPorTurma[
-                turma.id
-              ] || 0;
-
-            const limite =
-              Number(
-                turma.vagas || 0
-              );
-
-            const frequencia =
-              frequenciaPorTurma[
-                turma.id
-              ] || {
-                presentes: 0,
-                faltas: 0,
-              };
-
-            const registros =
-              frequencia.presentes +
-              frequencia.faltas;
-
-            const ocupacao =
-              limite > 0
-                ? percentual(
-                    matriculados,
-                    limite
-                  )
-                : 0;
-
-            return {
-              id: turma.id,
-              nome: turma.nome,
-              curso:
-                curso?.titulo ||
-                pegarRelacao(
-                  turma.cursos
-                )?.titulo ||
-                "Curso não informado",
-              cursoId:
-                turma.curso_id,
-              horario:
-                obterHorarioTurma(
-                  turma
-                ),
-              turno:
-                obterTurno(
-                  turma
-                ),
-              vagas: limite,
-              matriculados,
-              ocupacao,
-              presentes:
-                frequencia.presentes,
-              faltas:
-                frequencia.faltas,
-              registros,
-              frequencia:
-                percentual(
-                  frequencia.presentes,
-                  registros
-                ),
-            };
-          })
-          .filter((turma) => {
-            const busca =
-              `${turma.nome} ${turma.curso} ${turma.horario} ${turma.turno}`
-                .toLowerCase();
-
-            if (
-              filtroHorario &&
-              turma.horario !==
-                filtroHorario
-            ) {
-              return false;
-            }
-
-            if (
-              turmaDashboardSelecionada &&
-              turma.id !==
-                turmaDashboardSelecionada
-            ) {
-              return false;
-            }
-
-            return (
-              !filtroNome ||
-              busca.includes(
-                filtroNome.toLowerCase()
-              )
-            );
-          });
-      },
-      [
-        turmas,
-        cursos,
-        matriculadosPorTurma,
-        frequenciaPorTurma,
-        filtroHorario,
-        filtroNome,
-        turmaDashboardSelecionada,
-      ]
-    );
-
-  /* =======================================================
-     ALUNOS POR CURSO
-  ======================================================= */
-
-  const alunosPorCurso =
-    useMemo(() => {
-      return cursos
-        .map((curso) => {
-          const quantidade =
-            matriculas.filter(
-              (matricula) =>
-                matricula.curso_id ===
-                curso.id
-            ).length;
-
-          return {
-            id: curso.id,
-            nome: curso.titulo,
-            quantidade,
-          };
-        })
-        .filter(
-          (curso) =>
-            curso.quantidade > 0
-        )
-        .sort(
-          (a, b) =>
-            b.quantidade -
-            a.quantidade
-        );
-    }, [
-      cursos,
-      matriculas,
-    ]);
-
-  /* =======================================================
-     FREQUÊNCIA POR CURSO
-  ======================================================= */
-
-  const frequenciaPorCurso =
-    useMemo(() => {
-      return cursos
-        .map((curso) => {
-          const registros =
-            presencas.filter(
-              (registro) =>
-                registro.curso_id ===
-                curso.id
-            );
-
-          const presentesCurso =
-            registros.filter(
-              (registro) =>
-                ehPresenca(
-                  registro.status
-                )
-            ).length;
-
-          const faltasCurso =
-            registros.filter(
-              (registro) =>
-                ehFalta(
-                  registro.status
-                )
-            ).length;
-
-          return {
-            id: curso.id,
-            nome: curso.titulo,
-            presentes:
-              presentesCurso,
-            faltas:
-              faltasCurso,
-            total: registros.length,
-            frequencia:
-              percentual(
-                presentesCurso,
-                registros.length
-              ),
-          };
-        })
-        .filter(
-          (curso) =>
-            curso.total > 0
-        )
-        .sort(
-          (a, b) =>
-            b.frequencia -
-            a.frequencia
-        );
-    }, [
-      cursos,
-      presencas,
-    ]);
-
-  /* =======================================================
-     RANKING DE TURMAS
-  ======================================================= */
-
-  const rankingTurmas =
-    useMemo(() => {
-      return [...resumoTurmas]
-        .filter(
-          (turma) =>
-            turma.registros > 0
-        )
-        .sort(
-          (a, b) =>
-            b.frequencia -
-            a.frequencia
-        )
-        .slice(0, 5);
-    }, [resumoTurmas]);
-
-  /* =======================================================
-     TURMAS LOTADAS
-  ======================================================= */
-
-  const turmasLotadas =
-    useMemo(() => {
-      return resumoTurmas.filter(
-        (turma) =>
-          turma.vagas > 0 &&
-          turma.matriculados >=
-            turma.vagas
-      );
-    }, [resumoTurmas]);
-
-  /* =======================================================
-     TURMAS SEM VAGA INFORMADA
-  ======================================================= */
-
-  const turmasSemVaga =
-    useMemo(() => {
-      return resumoTurmas.filter(
-        (turma) =>
-          turma.vagas <= 0
-      );
-    }, [resumoTurmas]);
-
-  /* =======================================================
-     HORÁRIOS
-  ======================================================= */
-
-  const horarios =
-    useMemo(() => {
-      return Array.from(
-        new Set(
-          turmas
-            .map((turma) =>
-              obterHorarioTurma(
-                turma
-              )
-            )
-            .filter(
-              (horario) =>
-                horario !==
-                "Horário não cadastrado"
-            )
-        )
-      ).sort();
-    }, [turmas]);
-
-  /* =======================================================
-     ATIVIDADES RECENTES
-  ======================================================= */
-
-  const atividadesRecentes =
-    useMemo<AtividadeRecente[]>(
-      () => {
-        return [...presencas]
-          .sort(
-            (a, b) =>
-              new Date(
-                b.data_hora
-              ).getTime() -
-              new Date(
-                a.data_hora
-              ).getTime()
-          )
-          .slice(0, 10)
-          .map((registro) => {
-            const aluno =
-              pegarRelacao(
-                registro.alunos
-              );
-
-            const curso =
-              pegarRelacao(
-                registro.cursos
-              );
-
-            const turma =
-              pegarRelacao(
-                registro.turmas
-              );
-
-            return {
-              id: registro.id,
-              aluno:
-                aluno?.nome_completo ||
-                "Aluno não identificado",
-              turma:
-                turma?.nome ||
-                "Turma não identificada",
-              curso:
-                curso?.titulo ||
-                "Curso não identificado",
-              data:
-                formatarData(
-                  registro.data_hora
-                ),
-              hora:
-                formatarHora(
-                  registro.data_hora
-                ),
-              status:
-                normalizarStatus(
-                  registro.status
-                ),
-            };
-          });
-      },
-      [presencas]
-    );
-
-  /* =======================================================
-     EXPORTAR CSV
-  ======================================================= */
-
   const exportarCSV = () => {
     if (!presencas.length) {
-      alert(
-        "Não há registros para exportar."
-      );
+      alert("Não há registros para exportar.");
       return;
     }
 
@@ -1250,490 +502,1015 @@ export default function HistoricoClient({
       "Método",
     ];
 
-    const linhas =
-      presencas.map(
-        (registro) => {
-          const aluno =
-            pegarRelacao(
-              registro.alunos
-            );
+    const linhas = presencas.map((registro) => {
+      const aluno = pegarRelacao(registro.alunos);
+      const curso = pegarRelacao(registro.cursos);
+      const turma = pegarRelacao(registro.turmas);
+      const operador = pegarRelacao(registro.operadores);
 
-          const curso =
-            pegarRelacao(
-              registro.cursos
-            );
+      return [
+        aluno?.nome_completo || "",
+        formatarCPF(aluno?.cpf),
+        curso?.titulo || "",
+        turma?.nome || "",
+        formatarData(registro.data_hora),
+        formatarHora(registro.data_hora),
+        normalizarStatus(registro.status) === "falta"
+          ? "Falta"
+          : "Presente",
+        operador?.nome || "",
+        registro.metodo || "",
+      ];
+    });
 
-          const turma =
-            pegarRelacao(
-              registro.turmas
-            );
-
-          const operador =
-            pegarRelacao(
-              registro.operadores
-            );
-
-          return [
-            aluno?.nome_completo ||
-              "",
-            formatarCPF(
-              aluno?.cpf || null
-            ),
-            curso?.titulo || "",
-            turma?.nome || "",
-            formatarData(
-              registro.data_hora
-            ),
-            formatarHora(
-              registro.data_hora
-            ),
-            ehFalta(
-              registro.status
-            )
-              ? "Falta"
-              : "Presença",
-            operador?.nome || "",
-            registro.metodo || "",
-          ];
-        }
-      );
-
-    const csv = [
-      cabecalho,
-      ...linhas,
-    ]
+    const csv = [cabecalho, ...linhas]
       .map((linha) =>
         linha
           .map(
             (valor) =>
-              `"${String(
-                valor
-              ).replace(
-                /"/g,
-                '""'
-              )}"`
+              `"${String(valor).replace(/"/g, '""')}"`
           )
           .join(";")
       )
       .join("\n");
 
-    const blob = new Blob(
-      ["\ufeff" + csv],
-      {
-        type: "text/csv;charset=utf-8;",
-      }
-    );
+    const blob = new Blob(["\ufeff" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
 
-    const url =
-      URL.createObjectURL(
-        blob
-      );
+    const url = URL.createObjectURL(blob);
 
-    const link =
-      document.createElement(
-        "a"
-      );
+    const link = document.createElement("a");
 
     link.href = url;
 
-    link.download =
-      `relatorio-frequencia-${new Date()
-        .toISOString()
-        .slice(
-          0,
-          10
-        )}.csv`;
+    link.download = `relatorio-frequencia-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
 
-    document.body.appendChild(
-      link
-    );
+    document.body.appendChild(link);
 
     link.click();
 
-    document.body.removeChild(
-      link
-    );
+    document.body.removeChild(link);
 
     URL.revokeObjectURL(url);
   };
 
-  /* =======================================================
-     STATUS
-  ======================================================= */
-
-  const getStatus = (
-    registro: PresencaRegistro
-  ) => {
-    if (
-      ehFalta(
-        registro.status
-      )
-    ) {
-      return {
-        label: "Falta",
-        className:
-          "bg-red-50 text-red-700 border-red-200",
-        icon: (
-          <XCircle className="w-3.5 h-3.5" />
-        ),
-      };
-    }
-
-    return {
-      label: "Presença",
-      className:
-        "bg-emerald-50 text-emerald-700 border-emerald-200",
-      icon: (
-        <CheckCircle2 className="w-3.5 h-3.5" />
-      ),
-    };
-  };
-
-  /* =======================================================
-     RENDER
-  ======================================================= */
-
   return (
-    <div className="min-h-full bg-slate-50">
-      <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-full bg-slate-50 p-4 md:p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
 
-        {/* =================================================
-            CABEÇALHO
-        ================================================= */}
-
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        {/* CABEÇALHO */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-600">
-              <BarChart3 className="h-4 w-4" />
-              Gestão e acompanhamento
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
+                <BarChart3 className="w-6 h-6 text-white" />
+              </div>
+
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">
+                  Relatório de Frequência
+                </h1>
+
+                <p className="text-sm text-slate-500 mt-0.5">
+                  Acompanhe presenças, faltas, datas, cursos e
+                  turmas.
+                </p>
+              </div>
             </div>
-
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-              Dashboard
-            </h1>
-
-            <p className="mt-1 max-w-2xl text-sm text-slate-500">
-              Acompanhe alunos, matrículas,
-              cursos, turmas e frequência
-              em um único painel.
-            </p>
           </div>
 
           <button
             type="button"
-            onClick={carregarDashboard}
-            disabled={carregandoDashboard}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={buscarHistorico}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition disabled:opacity-50"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${
-                carregandoDashboard
-                  ? "animate-spin"
-                  : ""
-              }`}
-            />
+            <Search className="w-4 h-4" />
 
-            Atualizar dashboard
+            {isLoading
+              ? "Atualizando..."
+              : "Atualizar relatório"}
           </button>
         </div>
 
-        {/* =================================================
-            CARDS PRINCIPAIS
-        ================================================= */}
+        {/* FILTROS */}
+        <section className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+          <div className="p-5 border-b border-slate-200">
+            <div className="flex items-center gap-2">
+              <Filter className="w-5 h-5 text-blue-600" />
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <DashboardCard
-            icon={Users}
-            title="Alunos"
-            value={
-              dashboardCarregado
-                ? alunos.length
-                : "—"
-            }
-            description="Alunos cadastrados"
-          />
+              <div>
+                <h2 className="font-bold text-slate-900">
+                  Filtros
+                </h2>
 
-          <DashboardCard
-            icon={ClipboardList}
-            title="Matrículas"
-            value={
-              dashboardCarregado
-                ? matriculas.length
-                : "—"
-            }
-            description="Vínculos com turmas"
-          />
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Refine os registros que deseja consultar.
+                </p>
+              </div>
+            </div>
+          </div>
 
-          <DashboardCard
-            icon={BookOpen}
-            title="Turmas"
-            value={turmas.length}
-            description={`${cursos.length} cursos cadastrados`}
-          />
+          <div className="p-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 
-          <DashboardCard
-            icon={Percent}
-            title="Frequência"
-            value={`${percentual(
-              presentes,
-              presencas.length
-            )}%`}
-            description={`${presentes} presenças • ${faltas} faltas`}
-            destaque
-          />
-        </div>
+              {/* NOME */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Participante
+                </label>
 
-        {/* =================================================
-            CARDS SECUNDÁRIOS
-        ================================================= */}
+                <div className="relative">
+                  <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <MiniMetric
-            icon={CheckCircle2}
-            title="Presenças"
-            value={presentes}
-            tipo="verde"
-          />
+                  <input
+                    type="text"
+                    value={filtroNome}
+                    onChange={(event) =>
+                      setFiltroNome(event.target.value)
+                    }
+                    placeholder="Nome do participante"
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                  />
+                </div>
+              </div>
 
-          <MiniMetric
-            icon={XCircle}
-            title="Faltas"
-            value={faltas}
-            tipo="vermelho"
-          />
+              {/* CPF */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  CPF
+                </label>
 
-          <MiniMetric
-            icon={UsersRound}
-            title="Alunos em múltiplas turmas"
-            value={
-              alunosMultiplasTurmas.length
-            }
-            tipo="amarelo"
-          />
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
-          <MiniMetric
-            icon={GraduationCap}
-            title="Cursos ativos"
-            value={
-              alunosPorCurso.length
-            }
-            tipo="azul"
-          />
-        </div>
+                  <input
+                    type="text"
+                    value={filtroCpf}
+                    onChange={(event) =>
+                      setFiltroCpf(event.target.value)
+                    }
+                    placeholder="CPF"
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                  />
+                </div>
+              </div>
 
-        {/* =================================================
-            ALUNOS EM MAIS DE UMA TURMA
-        ================================================= */}
+              {/* CURSO */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Curso
+                </label>
 
-        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
-          <button
-            type="button"
-            onClick={() =>
-              setMostrarAlunosMultiplasTurmas(
-                (valor) => !valor
-              )
-            }
-            className="w-full p-5 text-left transition hover:bg-amber-50/40"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                  <UsersRound className="h-5 w-5" />
+                <select
+                  value={filtroCurso}
+                  onChange={(event) => {
+                    setFiltroCurso(event.target.value);
+                    setFiltroTurma("");
+                  }}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                >
+                  <option value="">
+                    Todos os cursos
+                  </option>
+
+                  {cursos.map((curso) => (
+                    <option
+                      key={curso.id}
+                      value={curso.id}
+                    >
+                      {curso.titulo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* TURMA */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Turma
+                </label>
+
+                <select
+                  value={filtroTurma}
+                  onChange={(event) =>
+                    setFiltroTurma(event.target.value)
+                  }
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                >
+                  <option value="">
+                    Todas as turmas
+                  </option>
+
+                  {turmasFiltradas.map((turma) => (
+                    <option
+                      key={turma.id}
+                      value={turma.id}
+                    >
+                      {turma.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* STATUS */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Situação
+                </label>
+
+                <select
+                  value={filtroStatus}
+                  onChange={(event) =>
+                    setFiltroStatus(event.target.value)
+                  }
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                >
+                  <option value="">
+                    Presenças e faltas
+                  </option>
+
+                  <option value="presente">
+                    Apenas presentes
+                  </option>
+
+                  <option value="falta">
+                    Apenas faltas
+                  </option>
+                </select>
+              </div>
+
+              {/* DATA INICIAL */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Data inicial
+                </label>
+
+                <div className="relative">
+                  <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+                  <input
+                    type="date"
+                    value={filtroDataInicio}
+                    onChange={(event) =>
+                      setFiltroDataInicio(
+                        event.target.value
+                      )
+                    }
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* DATA FINAL */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Data final
+                </label>
+
+                <div className="relative">
+                  <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+                  <input
+                    type="date"
+                    value={filtroDataFim}
+                    onChange={(event) =>
+                      setFiltroDataFim(event.target.value)
+                    }
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3 mt-5 pt-5 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={buscarHistorico}
+                disabled={isLoading}
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition disabled:opacity-50"
+              >
+                <Search className="w-4 h-4" />
+
+                {isLoading
+                  ? "Buscando..."
+                  : "Buscar registros"}
+              </button>
+
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className="inline-flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-semibold transition"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Limpar filtros
+              </button>
+
+              <button
+                type="button"
+                onClick={exportarCSV}
+                disabled={!presencas.length}
+                className="inline-flex items-center gap-2 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-5 py-2.5 rounded-lg text-sm font-semibold transition disabled:opacity-40"
+              >
+                <Download className="w-4 h-4" />
+                Exportar CSV
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* CARDS */}
+        {buscou && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+
+            {/* REGISTROS */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Registros
+                  </p>
+
+                  <p className="text-3xl font-bold text-slate-900 mt-2">
+                    {totalRegistros}
+                  </p>
+
+                  <p className="text-xs text-slate-400 mt-1">
+                    lançamentos encontrados
+                  </p>
+                </div>
+
+                <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-slate-600" />
+                </div>
+              </div>
+            </div>
+
+            {/* PRESENTES */}
+            <div className="bg-white border border-emerald-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                    Presenças
+                  </p>
+
+                  <p className="text-3xl font-bold text-emerald-700 mt-2">
+                    {presentes}
+                  </p>
+
+                  <p className="text-xs text-slate-400 mt-1">
+                    registros presentes
+                  </p>
+                </div>
+
+                <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+              </div>
+            </div>
+
+            {/* FALTAS */}
+            <div className="bg-white border border-red-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-red-600">
+                    Faltas
+                  </p>
+
+                  <p className="text-3xl font-bold text-red-700 mt-2">
+                    {faltas}
+                  </p>
+
+                  <p className="text-xs text-slate-400 mt-1">
+                    registros de ausência
+                  </p>
+                </div>
+
+                <div className="w-11 h-11 rounded-xl bg-red-50 flex items-center justify-center">
+                  <XCircle className="w-5 h-5 text-red-600" />
+                </div>
+              </div>
+            </div>
+
+            {/* FREQUÊNCIA */}
+            <div className="bg-white border border-blue-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
+                    Frequência
+                  </p>
+
+                  <p className="text-3xl font-bold text-blue-700 mt-2">
+                    {percentualPresenca}%
+                  </p>
+
+                  <p className="text-xs text-slate-400 mt-1">
+                    {alunosUnicos} participante(s)
+                  </p>
+                </div>
+
+                <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center">
+                  <Percent className="w-5 h-5 text-blue-600" />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* RESUMO GERAL */}
+        {buscou && presencas.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                  <User className="w-5 h-5 text-blue-600" />
                 </div>
 
                 <div>
-                  <h2 className="font-bold text-slate-900">
-                    Alunos em mais de uma turma
-                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Participantes
+                  </p>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    Clique para ver todas as
-                    turmas de cada aluno.
+                  <p className="text-xl font-bold text-slate-900">
+                    {alunosUnicos}
                   </p>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-700">
-                  {alunosMultiplasTurmas.length}
-                </span>
-
-                <ChevronDown
-                  className={`h-5 w-5 text-slate-400 transition-transform ${
-                    mostrarAlunosMultiplasTurmas
-                      ? "rotate-180"
-                      : ""
-                  }`}
-                />
               </div>
             </div>
-          </button>
 
-          {mostrarAlunosMultiplasTurmas && (
-            <div className="border-t border-amber-100 bg-amber-50/30 p-4 sm:p-5">
-              {alunosMultiplasTurmas.length ===
-              0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-                  <UsersRound className="mx-auto h-8 w-8 text-slate-300" />
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 text-violet-600" />
+                </div>
 
-                  <p className="mt-2 font-semibold text-slate-600">
-                    Nenhum aluno está
-                    matriculado em mais
-                    de uma turma.
+                <div>
+                  <p className="text-xs text-slate-500">
+                    Cursos com registros
+                  </p>
+
+                  <p className="text-xl font-bold text-slate-900">
+                    {cursosComRegistros}
                   </p>
                 </div>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {alunosMultiplasTurmas.map(
-                    (aluno) => (
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-amber-600" />
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-500">
+                    Turmas com registros
+                  </p>
+
+                  <p className="text-xl font-bold text-slate-900">
+                    {turmasComRegistros}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FREQUÊNCIA POR CURSO */}
+        {buscou && resumoPorCurso.length > 0 && (
+          <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 text-blue-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Frequência por curso
+                  </h2>
+
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Veja rapidamente a frequência registrada em cada curso.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {resumoPorCurso.map((curso) => {
+                const taxa = percentual(
+                  curso.presentes,
+                  curso.total
+                );
+
+                return (
+                  <div
+                    key={curso.id}
+                    className="border border-slate-100 rounded-xl p-4"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">
+                          {curso.nome}
+                        </p>
+
+                        <p className="text-xs text-slate-500 mt-1">
+                          {curso.total} registro(s) ·{" "}
+                          {curso.presentes} presença(s) ·{" "}
+                          {curso.faltas} falta(s)
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-blue-700">
+                          {taxa}%
+                        </p>
+
+                        <p className="text-[11px] text-slate-400">
+                          frequência
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 rounded-full transition-all"
+                        style={{
+                          width: `${taxa}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* FREQUÊNCIA POR TURMA */}
+        {buscou && resumoPorTurma.length > 0 && (
+          <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5 text-violet-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Frequência por turma
+                  </h2>
+
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Resumo de presença e falta por turma.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Turma
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Curso
+                    </th>
+
+                    <th className="text-center px-5 py-3 font-semibold text-slate-600">
+                      Registros
+                    </th>
+
+                    <th className="text-center px-5 py-3 font-semibold text-emerald-600">
+                      Presentes
+                    </th>
+
+                    <th className="text-center px-5 py-3 font-semibold text-red-600">
+                      Faltas
+                    </th>
+
+                    <th className="text-center px-5 py-3 font-semibold text-blue-600">
+                      Frequência
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {resumoPorTurma.map((turma) => {
+                    const taxa = percentual(
+                      turma.presentes,
+                      turma.total
+                    );
+
+                    return (
+                      <tr
+                        key={turma.id}
+                        className="hover:bg-slate-50 transition"
+                      >
+                        <td className="px-5 py-4 font-semibold text-slate-900">
+                          {turma.nome}
+                        </td>
+
+                        <td className="px-5 py-4 text-slate-600">
+                          {turma.curso}
+                        </td>
+
+                        <td className="px-5 py-4 text-center text-slate-600">
+                          {turma.total}
+                        </td>
+
+                        <td className="px-5 py-4 text-center font-semibold text-emerald-700">
+                          {turma.presentes}
+                        </td>
+
+                        <td className="px-5 py-4 text-center font-semibold text-red-700">
+                          {turma.faltas}
+                        </td>
+
+                        <td className="px-5 py-4 text-center">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold">
+                            {taxa}%
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {/* ALUNOS COM MAIS DE UM REGISTRO */}
+        {buscou && (
+          <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-amber-600" />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Participantes com vários registros
+                  </h2>
+
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Participantes que possuem mais de um lançamento de frequência.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {alunosComMaisDeUmRegistro.length === 0 ? (
+              <div className="p-8 text-center">
+                <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+
+                <p className="text-sm text-slate-500">
+                  Nenhum participante possui mais de um registro no resultado atual.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {alunosComMaisDeUmRegistro
+                  .slice(0, 30)
+                  .map((aluno) => {
+                    const taxa = percentual(
+                      aluno.presentes,
+                      aluno.total
+                    );
+
+                    return (
                       <div
                         key={aluno.id}
-                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                        className="p-5 hover:bg-slate-50 transition"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-700">
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
                               {aluno.nome
                                 .charAt(0)
                                 .toUpperCase()}
                             </div>
 
-                            <div className="min-w-0">
-                              <div className="truncate font-bold text-slate-900">
+                            <div>
+                              <p className="font-semibold text-slate-900">
                                 {aluno.nome}
-                              </div>
+                              </p>
 
-                              <div className="mt-0.5 text-xs text-slate-500">
-                                {aluno.turmas.length}{" "}
-                                turmas
-                              </div>
+                              <p className="text-xs text-slate-500">
+                                CPF:{" "}
+                                {formatarCPF(aluno.cpf)}
+                              </p>
                             </div>
                           </div>
 
-                          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700">
-                            Múltiplas
-                          </span>
-                        </div>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                              <Users className="w-3.5 h-3.5" />
+                              {aluno.total} registros
+                            </span>
 
-                        <div className="mt-4 space-y-2">
-                          {aluno.turmas.map(
-                            (turma) => (
-                              <div
-                                key={turma.id}
-                                className="rounded-lg border border-slate-100 bg-slate-50 p-3"
-                              >
-                                <div className="flex items-start gap-3">
-                                  <School className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {aluno.presentes} presentes
+                            </span>
 
-                                  <div className="min-w-0">
-                                    <div className="font-semibold text-slate-800">
-                                      {turma.nome}
-                                    </div>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 text-red-700 text-xs font-semibold">
+                              <XCircle className="w-3.5 h-3.5" />
+                              {aluno.faltas} faltas
+                            </span>
 
-                                    <div className="mt-1 text-xs text-slate-500">
-                                      {turma.curso}
-                                    </div>
-
-                                    <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                                      <Clock className="h-3.5 w-3.5 text-slate-400" />
-                                      {turma.horario}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* =================================================
-            GRÁFICOS / RESUMOS
-        ================================================= */}
-
-        <div className="grid gap-6 lg:grid-cols-2">
-
-          {/* ALUNOS POR CURSO */}
-
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 p-5">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
-                  <GraduationCap className="h-5 w-5" />
-                </div>
-
-                <div>
-                  <h2 className="font-bold text-slate-900">
-                    Alunos por curso
-                  </h2>
-
-                  <p className="text-xs text-slate-500">
-                    Distribuição das matrículas.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4 p-5">
-              {alunosPorCurso.length ===
-              0 ? (
-                <EmptyState text="Nenhuma matrícula encontrada." />
-              ) : (
-                alunosPorCurso
-                  .slice(0, 8)
-                  .map((curso) => {
-                    const max =
-                      alunosPorCurso[0]
-                        ?.quantidade ||
-                      1;
-
-                    const largura =
-                      percentual(
-                        curso.quantidade,
-                        max
-                      );
-
-                    return (
-                      <div key={curso.id}>
-                        <div className="mb-1.5 flex justify-between gap-3 text-sm">
-                          <span className="truncate font-medium text-slate-700">
-                            {curso.nome}
-                          </span>
-
-                          <span className="font-bold text-slate-900">
-                            {curso.quantidade}
-                          </span>
-                        </div>
-
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full bg-blue-500"
-                            style={{
-                              width: `${largura}%`,
-                            }}
-                          />
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">
+                              <Percent className="w-3.5 h-3.5" />
+                              {taxa}%
+                            </span>
+                          </div>
                         </div>
                       </div>
                     );
-                  })
+                  })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* RESULTADOS */}
+        {buscou && (
+          <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h2 className="font-bold text-slate-900">
+                  Histórico de frequência
+                </h2>
+
+                <p className="text-xs text-slate-500 mt-1">
+                  {presencas.length} registro(s) encontrado(s).
+                </p>
+              </div>
+
+              {presencas.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {presentes} presentes
+                  </span>
+
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 text-red-700 text-xs font-semibold">
+                    <XCircle className="w-3.5 h-3.5" />
+                    {faltas} faltas
+                  </span>
+                </div>
               )}
             </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white border-b border-slate-200">
+                  <tr>
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Participante
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      CPF
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Curso
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Turma
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Data
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Horário
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Situação
+                    </th>
+
+                    <th className="text-left px-5 py-3 font-semibold text-slate-600">
+                      Operador
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {presencas.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-5 py-14 text-center"
+                      >
+                        <div className="flex flex-col items-center">
+                          <Calendar className="w-9 h-9 text-slate-300 mb-3" />
+
+                          <p className="font-semibold text-slate-600">
+                            Nenhum registro encontrado
+                          </p>
+
+                          <p className="text-xs text-slate-400 mt-1">
+                            Tente alterar os filtros utilizados.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    presencas.map((registro) => {
+                      const aluno = pegarRelacao(
+                        registro.alunos
+                      );
+
+                      const curso = pegarRelacao(
+                        registro.cursos
+                      );
+
+                      const turma = pegarRelacao(
+                        registro.turmas
+                      );
+
+                      const operador = pegarRelacao(
+                        registro.operadores
+                      );
+
+                      const status =
+                        normalizarStatus(
+                          registro.status
+                        );
+
+                      const ehPresente =
+                        status === "presente";
+
+                      return (
+                        <tr
+                          key={registro.id}
+                          className="hover:bg-slate-50 transition-colors"
+                        >
+                          {/* PARTICIPANTE */}
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                                  ehPresente
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-red-50 text-red-700"
+                                }`}
+                              >
+                                <User className="w-4 h-4" />
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-slate-900">
+                                  {aluno?.nome_completo ||
+                                    "Participante não informado"}
+                                </p>
+
+                                <p className="text-[11px] text-slate-400">
+                                  Registro de frequência
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* CPF */}
+                          <td className="px-5 py-4 text-slate-500 whitespace-nowrap">
+                            {formatarCPF(aluno?.cpf)}
+                          </td>
+
+                          {/* CURSO */}
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              <BookOpen className="w-4 h-4 text-slate-400" />
+
+                              <span className="text-slate-700">
+                                {curso?.titulo ||
+                                  cursos.find(
+                                    (item) =>
+                                      item.id ===
+                                      registro.curso_id
+                                  )?.titulo ||
+                                  "Curso não informado"}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* TURMA */}
+                          <td className="px-5 py-4 text-slate-700">
+                            {turma?.nome ||
+                              turmas.find(
+                                (item) =>
+                                  item.id ===
+                                  registro.turma_id
+                              )?.nome ||
+                              "Turma não informada"}
+                          </td>
+
+                          {/* DATA */}
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <Calendar className="w-4 h-4 text-blue-500" />
+
+                              <div>
+                                <p className="font-semibold text-slate-700">
+                                  {formatarData(
+                                    registro.data_hora
+                                  )}
+                                </p>
+
+                                <p className="text-[11px] text-slate-400">
+                                  Dia do registro
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* HORÁRIO */}
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <Clock className="w-4 h-4 text-slate-400" />
+
+                              <span className="text-slate-600">
+                                {formatarHora(
+                                  registro.data_hora
+                                )}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* STATUS */}
+                          <td className="px-5 py-4">
+                            {ehPresente ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Presente
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
+                                <XCircle className="w-3.5 h-3.5" />
+                                Falta
+                              </span>
+                            )}
+                          </td>
+
+                          {/* OPERADOR */}
+                          <td className="px-5 py-4 text-slate-500">
+                            {operador?.nome || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
+        )}
 
-          {/* FREQUÊNCIA POR CURSO */}
+        {/* ESTADO INICIAL */}
+        {!buscou && (
+          <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
+              <BarChart3 className="w-7 h-7 text-blue-600" />
+            </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 p-5">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
-                  <TrendingUp className="h-5 w-5" />
-                </div>
+            <h2 className="font-bold text-slate-800">
+              Consulte a frequência
+            </h2>
 
-                <div>
-                  <h2 className="
+            <p className="text-sm text-slate-500 max-w-lg mx-auto mt-2">
+              Utilize os filtros acima e clique em
+              <strong> Buscar registros </strong>
+              para visualizar presenças, faltas, datas,
+              horários, cursos e turmas.
+            </p>
+
+            <button
+              type="button"
+              onClick={buscarHistorico}
+              disabled={isLoading}
+              className="mt-5 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition"
+            >
+              <Search className="w-4 h-4" />
+              Carregar frequência
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
