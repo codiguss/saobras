@@ -1,26 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  Search,
+  Calendar,
+  Filter,
+  RotateCcw,
+  Clock,
+  User,
   Users,
-  GraduationCap,
-  BookOpen,
-  ClipboardList,
+  UsersRound,
   CheckCircle2,
   XCircle,
+  Percent,
+  Download,
+  BookOpen,
+  GraduationCap,
   TrendingUp,
-  UserCheck,
-  Search,
-  RefreshCw,
-  ArrowUpRight,
-  CalendarDays,
-  UsersRound,
   ChevronDown,
-  Clock3,
   School,
+  AlertTriangle,
+  BarChart3,
+  ClipboardList,
+  RefreshCw,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
+
+/* =========================================================
+   TIPOS
+========================================================= */
 
 type Curso = {
   id: string;
@@ -31,10 +40,23 @@ type Turma = {
   id: string;
   nome: string;
   curso_id: string;
+
+  // Campos usados pelo dashboard
   horario?: string | null;
   turno?: string | null;
   vagas?: number | null;
-  cursos?: { titulo: string } | { titulo: string }[] | null;
+
+  cursos?: {
+    titulo: string;
+  } | {
+    titulo: string;
+  }[] | null;
+};
+
+type Aluno = {
+  id: string;
+  nome_completo: string;
+  cpf?: string | null;
 };
 
 type Matricula = {
@@ -44,22 +66,60 @@ type Matricula = {
   turma_id: string;
   data_matricula?: string | null;
 
-  // O Supabase pode devolver a relação como array.
-  alunos?: { nome_completo: string }[] | null;
+  alunos?:
+    | {
+        nome_completo: string;
+      }[]
+    | null;
 };
 
-type Aluno = {
-  id: string;
-  nome_completo: string;
-};
-
-type Presenca = {
+type PresencaRegistro = {
   id: string;
   aluno_id: string;
-  turma_id: string;
   curso_id: string;
-  status: string | null;
+  turma_id: string;
   data_hora: string;
+  metodo: string | null;
+  operador_id: string | null;
+  status: string | null;
+
+  alunos:
+    | {
+        nome_completo: string;
+        cpf: string | null;
+      }
+    | {
+        nome_completo: string;
+        cpf: string | null;
+      }[]
+    | null;
+
+  cursos:
+    | {
+        titulo: string;
+      }
+    | {
+        titulo: string;
+      }[]
+    | null;
+
+  turmas:
+    | {
+        nome: string;
+      }
+    | {
+        nome: string;
+      }[]
+    | null;
+
+  operadores:
+    | {
+        nome: string;
+      }
+    | {
+        nome: string;
+      }[]
+    | null;
 };
 
 type AlunoMultiplasTurmas = {
@@ -73,62 +133,143 @@ type AlunoMultiplasTurmas = {
   }[];
 };
 
-function relacao<T>(
+type ResumoTurma = {
+  id: string;
+  nome: string;
+  curso: string;
+  cursoId: string;
+  horario: string;
+  turno: string;
+  vagas: number;
+  matriculados: number;
+  ocupacao: number;
+  presentes: number;
+  faltas: number;
+  registros: number;
+  frequencia: number;
+};
+
+type AtividadeRecente = {
+  id: string;
+  aluno: string;
+  turma: string;
+  curso: string;
+  data: string;
+  hora: string;
+  status: "presente" | "falta";
+};
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function pegarRelacao<T>(
   valor: T | T[] | null | undefined
 ): T | null {
+  if (!valor) return null;
+
   return Array.isArray(valor)
     ? valor[0] || null
-    : valor || null;
+    : valor;
 }
 
-function statusPresenca(status: string | null) {
-  return String(status || "presente")
+function normalizarStatus(
+  status: string | null | undefined
+): "presente" | "falta" {
+  const valor = String(status || "")
     .toLowerCase()
-    .trim() === "falta"
-    ? "falta"
-    : "presente";
+    .trim();
+
+  if (
+    valor === "falta" ||
+    valor === "faltou" ||
+    valor === "ausente"
+  ) {
+    return "falta";
+  }
+
+  return "presente";
 }
 
-function percentual(valor: number, total: number) {
+function ehPresenca(
+  status: string | null | undefined
+) {
+  return normalizarStatus(status) === "presente";
+}
+
+function ehFalta(
+  status: string | null | undefined
+) {
+  return normalizarStatus(status) === "falta";
+}
+
+function percentual(
+  valor: number,
+  total: number
+) {
   if (!total) return 0;
 
-  return Math.round((valor / total) * 100);
+  return Math.round(
+    (valor / total) * 100
+  );
 }
 
 function formatarData(data: string) {
-  const d = new Date(data);
+  const valor = new Date(data);
 
-  if (Number.isNaN(d.getTime())) {
+  if (Number.isNaN(valor.getTime())) {
     return "—";
   }
 
-  return d.toLocaleDateString("pt-BR");
+  return valor.toLocaleDateString("pt-BR");
 }
 
 function formatarHora(data: string) {
-  const d = new Date(data);
+  const valor = new Date(data);
 
-  if (Number.isNaN(d.getTime())) {
+  if (Number.isNaN(valor.getTime())) {
     return "—";
   }
 
-  return d.toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return valor.toLocaleTimeString(
+    "pt-BR",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+    }
+  );
 }
 
-/**
- * Normaliza o horário da turma.
- *
- * Se existir "horario", ele será mostrado.
- * Se não existir, tenta usar "turno".
- * Se nenhum dos dois estiver preenchido, informa corretamente
- * que o cadastro da turma não possui horário.
- */
-function obterHorarioTurma(turma: Turma) {
-  const horario = String(turma.horario || "").trim();
-  const turno = String(turma.turno || "").trim();
+function formatarCPF(
+  cpf: string | null
+) {
+  if (!cpf) return "—";
+
+  const valor = cpf.replace(/\D/g, "");
+
+  if (valor.length === 11) {
+    return `${valor.slice(
+      0,
+      3
+    )}.${valor.slice(3, 6)}.${valor.slice(
+      6,
+      9
+    )}-${valor.slice(9, 11)}`;
+  }
+
+  return cpf;
+}
+
+function obterHorarioTurma(
+  turma: Turma
+) {
+  const horario = String(
+    turma.horario || ""
+  ).trim();
+
+  const turno = String(
+    turma.turno || ""
+  ).trim();
 
   if (horario) {
     return horario;
@@ -141,6 +282,20 @@ function obterHorarioTurma(turma: Turma) {
   return "Horário não cadastrado";
 }
 
+function obterTurno(
+  turma: Turma
+) {
+  if (turma.turno?.trim()) {
+    return turma.turno;
+  }
+
+  return "Turno não informado";
+}
+
+/* =========================================================
+   COMPONENTE
+========================================================= */
+
 export default function HistoricoClient({
   cursos,
   turmas,
@@ -148,431 +303,1229 @@ export default function HistoricoClient({
   cursos: Curso[];
   turmas: Turma[];
 }) {
-  const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [matriculas, setMatriculas] = useState<Matricula[]>([]);
-  const [presencas, setPresencas] = useState<Presenca[]>([]);
+  /* =======================================================
+     ESTADOS DO RELATÓRIO ORIGINAL
+  ======================================================= */
 
-  const [carregando, setCarregando] = useState(true);
+  const [
+    presencas,
+    setPresencas,
+  ] = useState<PresencaRegistro[]>([]);
 
-  const [busca, setBusca] = useState("");
-  const [cursoFiltro, setCursoFiltro] = useState("");
-  const [turmaFiltro, setTurmaFiltro] = useState("");
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(false);
+
+  const [
+    buscou,
+    setBuscou,
+  ] = useState(false);
+
+  const [
+    filtroCpf,
+    setFiltroCpf,
+  ] = useState("");
+
+  const [
+    filtroNome,
+    setFiltroNome,
+  ] = useState("");
+
+  const [
+    filtroCurso,
+    setFiltroCurso,
+  ] = useState("");
+
+  const [
+    filtroTurma,
+    setFiltroTurma,
+  ] = useState("");
+
+  const [
+    filtroStatus,
+    setFiltroStatus,
+  ] = useState("");
+
+  const [
+    filtroDataInicio,
+    setFiltroDataInicio,
+  ] = useState("");
+
+  const [
+    filtroDataFim,
+    setFiltroDataFim,
+  ] = useState("");
+
+  /* =======================================================
+     ESTADOS DO DASHBOARD
+  ======================================================= */
+
+  const [
+    alunos,
+    setAlunos,
+  ] = useState<Aluno[]>([]);
+
+  const [
+    matriculas,
+    setMatriculas,
+  ] = useState<Matricula[]>([]);
+
+  const [
+    carregandoDashboard,
+    setCarregandoDashboard,
+  ] = useState(false);
+
+  const [
+    dashboardCarregado,
+    setDashboardCarregado,
+  ] = useState(false);
 
   const [
     mostrarAlunosMultiplasTurmas,
     setMostrarAlunosMultiplasTurmas,
   ] = useState(false);
 
-  async function carregarDashboard() {
-    setCarregando(true);
+  const [
+    filtroHorario,
+    setFiltroHorario,
+  ] = useState("");
 
-    const [
-      alunosRes,
-      matriculasRes,
-      presencasRes,
-    ] = await Promise.all([
-      supabase
-        .from("alunos")
-        .select("id, nome_completo"),
+  const [
+    turmaDashboardSelecionada,
+    setTurmaDashboardSelecionada,
+  ] = useState("");
 
-      supabase
-        .from("matriculas")
-        .select(
-          "id, aluno_id, curso_id, turma_id, data_matricula, alunos(nome_completo)"
-        ),
+  /* =======================================================
+     TURMAS DO FILTRO
+  ======================================================= */
 
-      supabase
+  const turmasFiltradas = useMemo(() => {
+    if (!filtroCurso) {
+      return turmas;
+    }
+
+    return turmas.filter(
+      (turma) =>
+        turma.curso_id === filtroCurso
+    );
+  }, [
+    turmas,
+    filtroCurso,
+  ]);
+
+  /* =======================================================
+     BUSCA DO DASHBOARD
+  ======================================================= */
+
+  const carregarDashboard = async () => {
+    setCarregandoDashboard(true);
+
+    try {
+      const [
+        alunosRes,
+        matriculasRes,
+      ] = await Promise.all([
+        supabase
+          .from("alunos")
+          .select(
+            "id, nome_completo, cpf"
+          ),
+
+        supabase
+          .from("matriculas")
+          .select(
+            "id, aluno_id, curso_id, turma_id, data_matricula, alunos(nome_completo)"
+          ),
+      ]);
+
+      if (alunosRes.error) {
+        console.error(
+          "Erro ao carregar alunos:",
+          alunosRes.error
+        );
+      }
+
+      if (matriculasRes.error) {
+        console.error(
+          "Erro ao carregar matrículas:",
+          matriculasRes.error
+        );
+      }
+
+      setAlunos(
+        (alunosRes.data ||
+          []) as Aluno[]
+      );
+
+      setMatriculas(
+        (matriculasRes.data ||
+          []) as Matricula[]
+      );
+
+      setDashboardCarregado(
+        true
+      );
+    } catch (error) {
+      console.error(
+        "Erro ao carregar dashboard:",
+        error
+      );
+    } finally {
+      setCarregandoDashboard(
+        false
+      );
+    }
+  };
+
+  /* =======================================================
+     BUSCAR HISTÓRICO
+  ======================================================= */
+
+  const buscarHistorico = async () => {
+    setIsLoading(true);
+    setBuscou(true);
+
+    try {
+      let query = supabase
         .from("presencas")
         .select(
-          "id, aluno_id, turma_id, curso_id, status, data_hora"
+          "id, aluno_id, curso_id, turma_id, data_hora, metodo, operador_id, status, alunos(nome_completo, cpf), cursos(titulo), turmas(nome), operadores(nome)"
         )
         .order("data_hora", {
           ascending: false,
-        }),
-    ]);
+        })
+        .limit(5000);
 
-    if (alunosRes.error) {
-      console.error(
-        "Erro ao carregar alunos:",
-        alunosRes.error
-      );
-    }
+      if (filtroCurso) {
+        query = query.eq(
+          "curso_id",
+          filtroCurso
+        );
+      }
 
-    if (matriculasRes.error) {
-      console.error(
-        "Erro ao carregar matrículas:",
-        matriculasRes.error
-      );
-    }
+      if (filtroTurma) {
+        query = query.eq(
+          "turma_id",
+          filtroTurma
+        );
+      }
 
-    if (presencasRes.error) {
-      console.error(
-        "Erro ao carregar frequência:",
-        presencasRes.error
-      );
-    }
+      if (filtroDataInicio) {
+        query = query.gte(
+          "data_hora",
+          `${filtroDataInicio}T00:00:00`
+        );
+      }
 
-    if (alunosRes.data) {
-      setAlunos(alunosRes.data);
-    }
+      if (filtroDataFim) {
+        query = query.lte(
+          "data_hora",
+          `${filtroDataFim}T23:59:59.999`
+        );
+      }
 
-    if (matriculasRes.data) {
-      setMatriculas(
-        matriculasRes.data as Matricula[]
-      );
-    }
+      const {
+        data,
+        error,
+      } = await query;
 
-    if (presencasRes.data) {
-      setPresencas(
-        presencasRes.data as Presenca[]
-      );
-    }
+      if (error) {
+        console.error(
+          "Erro ao buscar histórico:",
+          error
+        );
 
-    setCarregando(false);
-  }
+        alert(
+          "Erro ao buscar histórico: " +
+            error.message
+        );
 
-  useEffect(() => {
-    carregarDashboard();
-  }, []);
-
-  /*
-   * ---------------------------------------------------------
-   * ALUNOS EM MAIS DE UMA TURMA
-   * ---------------------------------------------------------
-   */
-
-  const alunosMultiplasTurmas = useMemo<
-    AlunoMultiplasTurmas[]
-  >(() => {
-    const resultado: AlunoMultiplasTurmas[] = [];
-
-    alunos.forEach((aluno) => {
-      const matriculasAluno = matriculas.filter(
-        (matricula) =>
-          matricula.aluno_id === aluno.id
-      );
-
-      const turmaIds = Array.from(
-        new Set(
-          matriculasAluno.map(
-            (matricula) => matricula.turma_id
-          )
-        )
-      );
-
-      if (turmaIds.length <= 1) {
+        setPresencas([]);
         return;
       }
 
-      const turmasAluno = turmaIds
-        .map((turmaId) => {
-          const turma = turmas.find(
-            (item) => item.id === turmaId
+      let resultados =
+        (data ||
+          []) as unknown as PresencaRegistro[];
+
+      /* FILTRO POR NOME */
+
+      if (filtroNome.trim()) {
+        const termo =
+          filtroNome
+            .trim()
+            .toLowerCase();
+
+        resultados =
+          resultados.filter(
+            (registro) =>
+              pegarRelacao(
+                registro.alunos
+              )
+                ?.nome_completo?.toLowerCase()
+                .includes(termo)
           );
-
-          if (!turma) {
-            return null;
-          }
-
-          const curso = cursos.find(
-            (item) => item.id === turma.curso_id
-          );
-
-          return {
-            id: turma.id,
-            nome: turma.nome,
-            curso:
-              curso?.titulo ||
-              relacao(turma.cursos)?.titulo ||
-              "Curso não informado",
-            horario: obterHorarioTurma(turma),
-          };
-        })
-        .filter(
-          (
-            item
-          ): item is {
-            id: string;
-            nome: string;
-            curso: string;
-            horario: string;
-          } => item !== null
-        );
-
-      if (turmasAluno.length > 1) {
-        resultado.push({
-          id: aluno.id,
-          nome: aluno.nome_completo,
-          turmas: turmasAluno,
-        });
       }
-    });
 
-    return resultado.sort((a, b) =>
-      a.nome.localeCompare(b.nome, "pt-BR")
-    );
-  }, [alunos, matriculas, turmas, cursos]);
+      /* FILTRO POR CPF */
 
-  /*
-   * ---------------------------------------------------------
-   * TURMAS FILTRADAS
-   * ---------------------------------------------------------
-   */
+      if (filtroCpf.trim()) {
+        const cpfLimpo =
+          filtroCpf.replace(
+            /\D/g,
+            ""
+          );
 
-  const turmasFiltradas = useMemo(() => {
-    return turmas.filter((turma) => {
-      const curso =
-        relacao(turma.cursos) ||
-        cursos.find(
-          (item) => item.id === turma.curso_id
-        );
+        resultados =
+          resultados.filter(
+            (registro) =>
+              (
+                pegarRelacao(
+                  registro.alunos
+                )?.cpf || ""
+              )
+                .replace(
+                  /\D/g,
+                  ""
+                )
+                .includes(cpfLimpo)
+          );
+      }
 
-      const texto = `
-        ${turma.nome}
-        ${curso?.titulo || ""}
-        ${obterHorarioTurma(turma)}
-      `.toLowerCase();
+      /* FILTRO POR STATUS */
 
-      return (
-        (!busca ||
-          texto.includes(busca.toLowerCase())) &&
-        (!cursoFiltro ||
-          turma.curso_id === cursoFiltro) &&
-        (!turmaFiltro ||
-          turma.id === turmaFiltro)
+      if (filtroStatus) {
+        resultados =
+          resultados.filter(
+            (registro) =>
+              normalizarStatus(
+                registro.status
+              ) ===
+              filtroStatus
+          );
+      }
+
+      setPresencas(
+        resultados
       );
-    });
-  }, [
-    turmas,
-    cursos,
-    busca,
-    cursoFiltro,
-    turmaFiltro,
-  ]);
 
-  /*
-   * ---------------------------------------------------------
-   * FREQUÊNCIA GERAL
-   * ---------------------------------------------------------
-   */
+      /*
+       * Carrega os dados do dashboard
+       * também quando o usuário pesquisa.
+       */
+      if (!dashboardCarregado) {
+        await carregarDashboard();
+      }
+    } catch (error: any) {
+      console.error(
+        "Erro inesperado:",
+        error
+      );
+
+      alert(
+        "Erro inesperado: " +
+          (error?.message ||
+            "Erro desconhecido.")
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /* =======================================================
+     LIMPAR FILTROS
+  ======================================================= */
+
+  const limparFiltros = () => {
+    setFiltroCpf("");
+    setFiltroNome("");
+    setFiltroCurso("");
+    setFiltroTurma("");
+    setFiltroStatus("");
+    setFiltroDataInicio("");
+    setFiltroDataFim("");
+
+    setPresencas([]);
+    setBuscou(false);
+  };
+
+  /* =======================================================
+     INDICADORES DO RELATÓRIO
+  ======================================================= */
 
   const presentes = useMemo(
     () =>
       presencas.filter(
         (p) =>
-          statusPresenca(p.status) ===
-          "presente"
+          ehPresenca(p.status)
       ).length,
     [presencas]
   );
 
-  const faltas = presencas.length - presentes;
-
-  const frequenciaGeral = percentual(
-    presentes,
-    presencas.length
+  const faltas = useMemo(
+    () =>
+      presencas.filter(
+        (p) =>
+          ehFalta(p.status)
+      ).length,
+    [presencas]
   );
 
-  /*
-   * ---------------------------------------------------------
-   * MATRÍCULAS POR TURMA
-   * ---------------------------------------------------------
-   */
+  const percentualPresenca =
+    useMemo(() => {
+      return percentual(
+        presentes,
+        presencas.length
+      );
+    }, [
+      presentes,
+      presencas.length,
+    ]);
 
-  const matriculadosPorTurma = useMemo(() => {
-    const mapa: Record<string, number> = {};
+  const alunosUnicos =
+    useMemo(() => {
+      return new Set(
+        presencas.map(
+          (p) => p.aluno_id
+        )
+      ).size;
+    }, [presencas]);
 
-    matriculas.forEach((matricula) => {
-      mapa[matricula.turma_id] =
-        (mapa[matricula.turma_id] || 0) + 1;
-    });
+  /* =======================================================
+     ALUNOS EM MAIS DE UMA TURMA
+  ======================================================= */
 
-    return mapa;
-  }, [matriculas]);
+  const alunosMultiplasTurmas =
+    useMemo<
+      AlunoMultiplasTurmas[]
+    >(() => {
+      const resultado: AlunoMultiplasTurmas[] =
+        [];
 
-  /*
-   * ---------------------------------------------------------
-   * FREQUÊNCIA POR TURMA
-   * ---------------------------------------------------------
-   */
+      alunos.forEach(
+        (aluno) => {
+          const matriculasAluno =
+            matriculas.filter(
+              (matricula) =>
+                matricula.aluno_id ===
+                aluno.id
+            );
 
-  const frequenciaPorTurma = useMemo(() => {
-    const mapa: Record<
-      string,
-      {
-        presentes: number;
-        faltas: number;
-      }
-    > = {};
+          const turmaIds =
+            Array.from(
+              new Set(
+                matriculasAluno.map(
+                  (matricula) =>
+                    matricula.turma_id
+                )
+              )
+            );
 
-    presencas.forEach((presenca) => {
-      if (!mapa[presenca.turma_id]) {
-        mapa[presenca.turma_id] = {
-          presentes: 0,
-          faltas: 0,
-        };
-      }
+          if (
+            turmaIds.length <= 1
+          ) {
+            return;
+          }
 
-      if (
-        statusPresenca(presenca.status) ===
-        "presente"
-      ) {
-        mapa[presenca.turma_id].presentes++;
-      } else {
-        mapa[presenca.turma_id].faltas++;
-      }
-    });
+          const turmasAluno =
+            turmaIds
+              .map(
+                (turmaId) => {
+                  const turma =
+                    turmas.find(
+                      (item) =>
+                        item.id ===
+                        turmaId
+                    );
 
-    return mapa;
-  }, [presencas]);
+                  if (!turma) {
+                    return null;
+                  }
 
-  /*
-   * ---------------------------------------------------------
-   * ATIVIDADES RECENTES
-   * ---------------------------------------------------------
-   */
+                  const curso =
+                    cursos.find(
+                      (item) =>
+                        item.id ===
+                        turma.curso_id
+                    );
 
-  const ultimasAtividades = useMemo(() => {
-    return [...presencas]
-      .sort(
+                  return {
+                    id: turma.id,
+                    nome: turma.nome,
+                    curso:
+                      curso?.titulo ||
+                      pegarRelacao(
+                        turma.cursos
+                      )?.titulo ||
+                      "Curso não informado",
+                    horario:
+                      obterHorarioTurma(
+                        turma
+                      ),
+                  };
+                }
+              )
+              .filter(
+                (
+                  item
+                ): item is {
+                  id: string;
+                  nome: string;
+                  curso: string;
+                  horario: string;
+                } =>
+                  item !== null
+              );
+
+          if (
+            turmasAluno.length >
+            1
+          ) {
+            resultado.push({
+              id: aluno.id,
+              nome:
+                aluno.nome_completo,
+              turmas:
+                turmasAluno,
+            });
+          }
+        }
+      );
+
+      return resultado.sort(
         (a, b) =>
-          new Date(b.data_hora).getTime() -
-          new Date(a.data_hora).getTime()
-      )
-      .slice(0, 8)
-      .map((presenca) => {
-        const aluno = alunos.find(
-          (item) =>
-            item.id === presenca.aluno_id
+          a.nome.localeCompare(
+            b.nome,
+            "pt-BR"
+          )
+      );
+    }, [
+      alunos,
+      matriculas,
+      turmas,
+      cursos,
+    ]);
+
+  /* =======================================================
+     MATRÍCULAS POR TURMA
+  ======================================================= */
+
+  const matriculadosPorTurma =
+    useMemo(() => {
+      const mapa: Record<
+        string,
+        number
+      > = {};
+
+      matriculas.forEach(
+        (matricula) => {
+          mapa[
+            matricula.turma_id
+          ] =
+            (mapa[
+              matricula.turma_id
+            ] || 0) + 1;
+        }
+      );
+
+      return mapa;
+    }, [matriculas]);
+
+  /* =======================================================
+     FREQUÊNCIA POR TURMA
+  ======================================================= */
+
+  const frequenciaPorTurma =
+    useMemo(() => {
+      const mapa: Record<
+        string,
+        {
+          presentes: number;
+          faltas: number;
+        }
+      > = {};
+
+      presencas.forEach(
+        (registro) => {
+          if (
+            !mapa[
+              registro.turma_id
+            ]
+          ) {
+            mapa[
+              registro.turma_id
+            ] = {
+              presentes: 0,
+              faltas: 0,
+            };
+          }
+
+          if (
+            ehPresenca(
+              registro.status
+            )
+          ) {
+            mapa[
+              registro.turma_id
+            ].presentes++;
+          } else {
+            mapa[
+              registro.turma_id
+            ].faltas++;
+          }
+        }
+      );
+
+      return mapa;
+    }, [presencas]);
+
+  /* =======================================================
+     RESUMO COMPLETO DAS TURMAS
+  ======================================================= */
+
+  const resumoTurmas =
+    useMemo<ResumoTurma[]>(
+      () => {
+        return turmas
+          .map((turma) => {
+            const curso =
+              cursos.find(
+                (c) =>
+                  c.id ===
+                  turma.curso_id
+              );
+
+            const matriculados =
+              matriculadosPorTurma[
+                turma.id
+              ] || 0;
+
+            const limite =
+              Number(
+                turma.vagas || 0
+              );
+
+            const frequencia =
+              frequenciaPorTurma[
+                turma.id
+              ] || {
+                presentes: 0,
+                faltas: 0,
+              };
+
+            const registros =
+              frequencia.presentes +
+              frequencia.faltas;
+
+            const ocupacao =
+              limite > 0
+                ? percentual(
+                    matriculados,
+                    limite
+                  )
+                : 0;
+
+            return {
+              id: turma.id,
+              nome: turma.nome,
+              curso:
+                curso?.titulo ||
+                pegarRelacao(
+                  turma.cursos
+                )?.titulo ||
+                "Curso não informado",
+              cursoId:
+                turma.curso_id,
+              horario:
+                obterHorarioTurma(
+                  turma
+                ),
+              turno:
+                obterTurno(
+                  turma
+                ),
+              vagas: limite,
+              matriculados,
+              ocupacao,
+              presentes:
+                frequencia.presentes,
+              faltas:
+                frequencia.faltas,
+              registros,
+              frequencia:
+                percentual(
+                  frequencia.presentes,
+                  registros
+                ),
+            };
+          })
+          .filter((turma) => {
+            const busca =
+              `${turma.nome} ${turma.curso} ${turma.horario} ${turma.turno}`
+                .toLowerCase();
+
+            if (
+              filtroHorario &&
+              turma.horario !==
+                filtroHorario
+            ) {
+              return false;
+            }
+
+            if (
+              turmaDashboardSelecionada &&
+              turma.id !==
+                turmaDashboardSelecionada
+            ) {
+              return false;
+            }
+
+            return (
+              !filtroNome ||
+              busca.includes(
+                filtroNome.toLowerCase()
+              )
+            );
+          });
+      },
+      [
+        turmas,
+        cursos,
+        matriculadosPorTurma,
+        frequenciaPorTurma,
+        filtroHorario,
+        filtroNome,
+        turmaDashboardSelecionada,
+      ]
+    );
+
+  /* =======================================================
+     ALUNOS POR CURSO
+  ======================================================= */
+
+  const alunosPorCurso =
+    useMemo(() => {
+      return cursos
+        .map((curso) => {
+          const quantidade =
+            matriculas.filter(
+              (matricula) =>
+                matricula.curso_id ===
+                curso.id
+            ).length;
+
+          return {
+            id: curso.id,
+            nome: curso.titulo,
+            quantidade,
+          };
+        })
+        .filter(
+          (curso) =>
+            curso.quantidade > 0
+        )
+        .sort(
+          (a, b) =>
+            b.quantidade -
+            a.quantidade
         );
+    }, [
+      cursos,
+      matriculas,
+    ]);
 
-        const turma = turmas.find(
-          (item) =>
-            item.id === presenca.turma_id
+  /* =======================================================
+     FREQUÊNCIA POR CURSO
+  ======================================================= */
+
+  const frequenciaPorCurso =
+    useMemo(() => {
+      return cursos
+        .map((curso) => {
+          const registros =
+            presencas.filter(
+              (registro) =>
+                registro.curso_id ===
+                curso.id
+            );
+
+          const presentesCurso =
+            registros.filter(
+              (registro) =>
+                ehPresenca(
+                  registro.status
+                )
+            ).length;
+
+          const faltasCurso =
+            registros.filter(
+              (registro) =>
+                ehFalta(
+                  registro.status
+                )
+            ).length;
+
+          return {
+            id: curso.id,
+            nome: curso.titulo,
+            presentes:
+              presentesCurso,
+            faltas:
+              faltasCurso,
+            total: registros.length,
+            frequencia:
+              percentual(
+                presentesCurso,
+                registros.length
+              ),
+          };
+        })
+        .filter(
+          (curso) =>
+            curso.total > 0
+        )
+        .sort(
+          (a, b) =>
+            b.frequencia -
+            a.frequencia
         );
+    }, [
+      cursos,
+      presencas,
+    ]);
 
-        const curso = cursos.find(
-          (item) =>
-            item.id === presenca.curso_id
-        );
+  /* =======================================================
+     RANKING DE TURMAS
+  ======================================================= */
 
-        return {
-          ...presenca,
-          aluno:
-            aluno?.nome_completo ||
-            "Aluno não identificado",
-          turma:
-            turma?.nome ||
-            "Turma não identificada",
-          curso:
-            curso?.titulo ||
-            "Curso não identificado",
-          horario: turma
-            ? obterHorarioTurma(turma)
-            : "Horário não cadastrado",
-        };
-      });
-  }, [
-    presencas,
-    alunos,
-    turmas,
-    cursos,
-  ]);
+  const rankingTurmas =
+    useMemo(() => {
+      return [...resumoTurmas]
+        .filter(
+          (turma) =>
+            turma.registros > 0
+        )
+        .sort(
+          (a, b) =>
+            b.frequencia -
+            a.frequencia
+        )
+        .slice(0, 5);
+    }, [resumoTurmas]);
 
-  /*
-   * ---------------------------------------------------------
-   * TURMA SELECIONADA
-   * ---------------------------------------------------------
-   */
+  /* =======================================================
+     TURMAS LOTADAS
+  ======================================================= */
 
-  const turmaSelecionada = turmaFiltro
-    ? turmas.find(
+  const turmasLotadas =
+    useMemo(() => {
+      return resumoTurmas.filter(
         (turma) =>
-          turma.id === turmaFiltro
-      )
-    : null;
+          turma.vagas > 0 &&
+          turma.matriculados >=
+            turma.vagas
+      );
+    }, [resumoTurmas]);
 
-  /*
-   * ---------------------------------------------------------
-   * RENDER
-   * ---------------------------------------------------------
-   */
+  /* =======================================================
+     TURMAS SEM VAGA INFORMADA
+  ======================================================= */
+
+  const turmasSemVaga =
+    useMemo(() => {
+      return resumoTurmas.filter(
+        (turma) =>
+          turma.vagas <= 0
+      );
+    }, [resumoTurmas]);
+
+  /* =======================================================
+     HORÁRIOS
+  ======================================================= */
+
+  const horarios =
+    useMemo(() => {
+      return Array.from(
+        new Set(
+          turmas
+            .map((turma) =>
+              obterHorarioTurma(
+                turma
+              )
+            )
+            .filter(
+              (horario) =>
+                horario !==
+                "Horário não cadastrado"
+            )
+        )
+      ).sort();
+    }, [turmas]);
+
+  /* =======================================================
+     ATIVIDADES RECENTES
+  ======================================================= */
+
+  const atividadesRecentes =
+    useMemo<AtividadeRecente[]>(
+      () => {
+        return [...presencas]
+          .sort(
+            (a, b) =>
+              new Date(
+                b.data_hora
+              ).getTime() -
+              new Date(
+                a.data_hora
+              ).getTime()
+          )
+          .slice(0, 10)
+          .map((registro) => {
+            const aluno =
+              pegarRelacao(
+                registro.alunos
+              );
+
+            const curso =
+              pegarRelacao(
+                registro.cursos
+              );
+
+            const turma =
+              pegarRelacao(
+                registro.turmas
+              );
+
+            return {
+              id: registro.id,
+              aluno:
+                aluno?.nome_completo ||
+                "Aluno não identificado",
+              turma:
+                turma?.nome ||
+                "Turma não identificada",
+              curso:
+                curso?.titulo ||
+                "Curso não identificado",
+              data:
+                formatarData(
+                  registro.data_hora
+                ),
+              hora:
+                formatarHora(
+                  registro.data_hora
+                ),
+              status:
+                normalizarStatus(
+                  registro.status
+                ),
+            };
+          });
+      },
+      [presencas]
+    );
+
+  /* =======================================================
+     EXPORTAR CSV
+  ======================================================= */
+
+  const exportarCSV = () => {
+    if (!presencas.length) {
+      alert(
+        "Não há registros para exportar."
+      );
+      return;
+    }
+
+    const cabecalho = [
+      "Participante",
+      "CPF",
+      "Curso",
+      "Turma",
+      "Data",
+      "Horário",
+      "Status",
+      "Operador",
+      "Método",
+    ];
+
+    const linhas =
+      presencas.map(
+        (registro) => {
+          const aluno =
+            pegarRelacao(
+              registro.alunos
+            );
+
+          const curso =
+            pegarRelacao(
+              registro.cursos
+            );
+
+          const turma =
+            pegarRelacao(
+              registro.turmas
+            );
+
+          const operador =
+            pegarRelacao(
+              registro.operadores
+            );
+
+          return [
+            aluno?.nome_completo ||
+              "",
+            formatarCPF(
+              aluno?.cpf || null
+            ),
+            curso?.titulo || "",
+            turma?.nome || "",
+            formatarData(
+              registro.data_hora
+            ),
+            formatarHora(
+              registro.data_hora
+            ),
+            ehFalta(
+              registro.status
+            )
+              ? "Falta"
+              : "Presença",
+            operador?.nome || "",
+            registro.metodo || "",
+          ];
+        }
+      );
+
+    const csv = [
+      cabecalho,
+      ...linhas,
+    ]
+      .map((linha) =>
+        linha
+          .map(
+            (valor) =>
+              `"${String(
+                valor
+              ).replace(
+                /"/g,
+                '""'
+              )}"`
+          )
+          .join(";")
+      )
+      .join("\n");
+
+    const blob = new Blob(
+      ["\ufeff" + csv],
+      {
+        type: "text/csv;charset=utf-8;",
+      }
+    );
+
+    const url =
+      URL.createObjectURL(
+        blob
+      );
+
+    const link =
+      document.createElement(
+        "a"
+      );
+
+    link.href = url;
+
+    link.download =
+      `relatorio-frequencia-${new Date()
+        .toISOString()
+        .slice(
+          0,
+          10
+        )}.csv`;
+
+    document.body.appendChild(
+      link
+    );
+
+    link.click();
+
+    document.body.removeChild(
+      link
+    );
+
+    URL.revokeObjectURL(url);
+  };
+
+  /* =======================================================
+     STATUS
+  ======================================================= */
+
+  const getStatus = (
+    registro: PresencaRegistro
+  ) => {
+    if (
+      ehFalta(
+        registro.status
+      )
+    ) {
+      return {
+        label: "Falta",
+        className:
+          "bg-red-50 text-red-700 border-red-200",
+        icon: (
+          <XCircle className="w-3.5 h-3.5" />
+        ),
+      };
+    }
+
+    return {
+      label: "Presença",
+      className:
+        "bg-emerald-50 text-emerald-700 border-emerald-200",
+      icon: (
+        <CheckCircle2 className="w-3.5 h-3.5" />
+      ),
+    };
+  };
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
-    <div className="min-h-full bg-slate-50 px-4 pb-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="min-h-full bg-slate-50">
+      <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
 
-        {/* CABEÇALHO */}
+        {/* =================================================
+            CABEÇALHO
+        ================================================= */}
 
-        <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-emerald-600">
-              <TrendingUp className="h-4 w-4" />
-              Visão geral
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-600">
+              <BarChart3 className="h-4 w-4" />
+              Gestão e acompanhamento
             </div>
 
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">
               Dashboard
             </h1>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Acompanhe alunos, matrículas, turmas e frequência em um só lugar.
+            <p className="mt-1 max-w-2xl text-sm text-slate-500">
+              Acompanhe alunos, matrículas,
+              cursos, turmas e frequência
+              em um único painel.
             </p>
           </div>
 
           <button
+            type="button"
             onClick={carregarDashboard}
-            disabled={carregando}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
+            disabled={carregandoDashboard}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw
               className={`h-4 w-4 ${
-                carregando
+                carregandoDashboard
                   ? "animate-spin"
                   : ""
               }`}
             />
 
-            Atualizar dados
+            Atualizar dashboard
           </button>
         </div>
 
-        {/* CARDS PRINCIPAIS */}
+        {/* =================================================
+            CARDS PRINCIPAIS
+        ================================================= */}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DashboardCard
             icon={Users}
-            label="Alunos cadastrados"
-            value={alunos.length}
-            description="Pessoas no sistema"
+            title="Alunos"
+            value={
+              dashboardCarregado
+                ? alunos.length
+                : "—"
+            }
+            description="Alunos cadastrados"
           />
 
-          <MetricCard
-            icon={GraduationCap}
-            label="Matrículas"
-            value={matriculas.length}
-            description={`${turmas.length} turmas cadastradas`}
-          />
-
-          <MetricCard
-            icon={BookOpen}
-            label="Turmas"
-            value={turmas.length}
-            description={`${cursos.length} cursos disponíveis`}
-          />
-
-          <MetricCard
+          <DashboardCard
             icon={ClipboardList}
-            label="Frequência geral"
-            value={`${frequenciaGeral}%`}
+            title="Matrículas"
+            value={
+              dashboardCarregado
+                ? matriculas.length
+                : "—"
+            }
+            description="Vínculos com turmas"
+          />
+
+          <DashboardCard
+            icon={BookOpen}
+            title="Turmas"
+            value={turmas.length}
+            description={`${cursos.length} cursos cadastrados`}
+          />
+
+          <DashboardCard
+            icon={Percent}
+            title="Frequência"
+            value={`${percentual(
+              presentes,
+              presencas.length
+            )}%`}
             description={`${presentes} presenças • ${faltas} faltas`}
             destaque
           />
         </div>
 
-        {/* ALUNOS EM MAIS DE UMA TURMA */}
+        {/* =================================================
+            CARDS SECUNDÁRIOS
+        ================================================= */}
 
-        <section className="mt-6 overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <MiniMetric
+            icon={CheckCircle2}
+            title="Presenças"
+            value={presentes}
+            tipo="verde"
+          />
+
+          <MiniMetric
+            icon={XCircle}
+            title="Faltas"
+            value={faltas}
+            tipo="vermelho"
+          />
+
+          <MiniMetric
+            icon={UsersRound}
+            title="Alunos em múltiplas turmas"
+            value={
+              alunosMultiplasTurmas.length
+            }
+            tipo="amarelo"
+          />
+
+          <MiniMetric
+            icon={GraduationCap}
+            title="Cursos ativos"
+            value={
+              alunosPorCurso.length
+            }
+            tipo="azul"
+          />
+        </div>
+
+        {/* =================================================
+            ALUNOS EM MAIS DE UMA TURMA
+        ================================================= */}
+
+        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
           <button
             type="button"
             onClick={() =>
@@ -594,7 +1547,8 @@ export default function HistoricoClient({
                   </h2>
 
                   <p className="mt-1 text-xs text-slate-500">
-                    Clique para visualizar exatamente quais turmas cada aluno possui.
+                    Clique para ver todas as
+                    turmas de cada aluno.
                   </p>
                 </div>
               </div>
@@ -623,7 +1577,9 @@ export default function HistoricoClient({
                   <UsersRound className="mx-auto h-8 w-8 text-slate-300" />
 
                   <p className="mt-2 font-semibold text-slate-600">
-                    Nenhum aluno está matriculado em mais de uma turma.
+                    Nenhum aluno está
+                    matriculado em mais
+                    de uma turma.
                   </p>
                 </div>
               ) : (
@@ -648,7 +1604,8 @@ export default function HistoricoClient({
                               </div>
 
                               <div className="mt-0.5 text-xs text-slate-500">
-                                {aluno.turmas.length} turmas
+                                {aluno.turmas.length}{" "}
+                                turmas
                               </div>
                             </div>
                           </div>
@@ -678,7 +1635,7 @@ export default function HistoricoClient({
                                     </div>
 
                                     <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                                      <Clock3 className="h-3.5 w-3.5 text-slate-400" />
+                                      <Clock className="h-3.5 w-3.5 text-slate-400" />
                                       {turma.horario}
                                     </div>
                                   </div>
@@ -696,487 +1653,87 @@ export default function HistoricoClient({
           )}
         </section>
 
-        {/* TURMAS + FREQUÊNCIA */}
+        {/* =================================================
+            GRÁFICOS / RESUMOS
+        ================================================= */}
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        <div className="grid gap-6 lg:grid-cols-2">
+
+          {/* ALUNOS POR CURSO */}
+
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 p-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="font-bold text-slate-900">
-                    Turmas
-                  </h2>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Clique em uma turma para filtrar o dashboard.
-                  </p>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
+                  <GraduationCap className="h-5 w-5" />
                 </div>
 
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <div>
+                  <h2 className="font-bold text-slate-900">
+                    Alunos por curso
+                  </h2>
 
-                    <input
-                      value={busca}
-                      onChange={(e) =>
-                        setBusca(e.target.value)
-                      }
-                      placeholder="Buscar turma..."
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 sm:w-48"
-                    />
-                  </div>
-
-                  <select
-                    value={cursoFiltro}
-                    onChange={(e) => {
-                      setCursoFiltro(
-                        e.target.value
-                      );
-                      setTurmaFiltro("");
-                    }}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-400"
-                  >
-                    <option value="">
-                      Todos os cursos
-                    </option>
-
-                    {cursos.map((curso) => (
-                      <option
-                        key={curso.id}
-                        value={curso.id}
-                      >
-                        {curso.titulo}
-                      </option>
-                    ))}
-                  </select>
+                  <p className="text-xs text-slate-500">
+                    Distribuição das matrículas.
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {carregando ? (
-                <div className="p-10 text-center text-sm text-slate-400">
-                  Carregando indicadores...
-                </div>
-              ) : turmasFiltradas.length ===
-                0 ? (
-                <div className="p-10 text-center">
-                  <BookOpen className="mx-auto h-8 w-8 text-slate-300" />
-
-                  <p className="mt-2 text-sm font-medium text-slate-600">
-                    Nenhuma turma encontrada.
-                  </p>
-                </div>
+            <div className="space-y-4 p-5">
+              {alunosPorCurso.length ===
+              0 ? (
+                <EmptyState text="Nenhuma matrícula encontrada." />
               ) : (
-                turmasFiltradas.map(
-                  (turma) => {
-                    const curso =
-                      relacao(turma.cursos) ||
-                      cursos.find(
-                        (c) =>
-                          c.id ===
-                          turma.curso_id
-                      );
+                alunosPorCurso
+                  .slice(0, 8)
+                  .map((curso) => {
+                    const max =
+                      alunosPorCurso[0]
+                        ?.quantidade ||
+                      1;
 
-                    const ocupadas =
-                      matriculadosPorTurma[
-                        turma.id
-                      ] || 0;
-
-                    const limite =
-                      turma.vagas || 10;
-
-                    const freq =
-                      frequenciaPorTurma[
-                        turma.id
-                      ] || {
-                        presentes: 0,
-                        faltas: 0,
-                      };
-
-                    const totalFreq =
-                      freq.presentes +
-                      freq.faltas;
-
-                    const percentualFreq =
+                    const largura =
                       percentual(
-                        freq.presentes,
-                        totalFreq
-                      );
-
-                    const ocupacao =
-                      percentual(
-                        ocupadas,
-                        limite
+                        curso.quantidade,
+                        max
                       );
 
                     return (
-                      <button
-                        key={turma.id}
-                        onClick={() =>
-                          setTurmaFiltro(
-                            turma.id
-                          )
-                        }
-                        className={`w-full p-5 text-left transition hover:bg-slate-50 ${
-                          turmaSelecionada?.id ===
-                          turma.id
-                            ? "bg-emerald-50/60"
-                            : ""
-                        }`}
-                      >
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <div className="truncate font-semibold text-slate-900">
-                                {turma.nome}
-                              </div>
+                      <div key={curso.id}>
+                        <div className="mb-1.5 flex justify-between gap-3 text-sm">
+                          <span className="truncate font-medium text-slate-700">
+                            {curso.nome}
+                          </span>
 
-                              <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300" />
-                            </div>
-
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
-                                {curso?.titulo ||
-                                  "Curso não informado"}
-                              </span>
-
-                              <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
-                                <Clock3 className="h-3 w-3" />
-                                {obterHorarioTurma(
-                                  turma
-                                )}
-                              </span>
-
-                              {turma.turno && (
-                                <span className="rounded-md bg-violet-50 px-2 py-1 text-xs font-medium text-violet-700">
-                                  {turma.turno}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="w-full sm:max-w-xs">
-                            <div className="mb-1.5 flex justify-between text-xs">
-                              <span className="text-slate-500">
-                                Alunos
-                              </span>
-
-                              <span className="font-semibold text-slate-700">
-                                {ocupadas}/
-                                {limite}
-                              </span>
-                            </div>
-
-                            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                              <div
-                                className="h-full rounded-full bg-emerald-500 transition-all"
-                                style={{
-                                  width: `${Math.min(
-                                    100,
-                                    ocupacao
-                                  )}%`,
-                                }}
-                              />
-                            </div>
-
-                            <div className="mt-2 flex justify-between text-xs">
-                              <span className="text-slate-400">
-                                {totalFreq} registros
-                              </span>
-
-                              <span className="font-semibold text-slate-700">
-                                {totalFreq
-                                  ? `${percentualFreq}% presença`
-                                  : "Sem registros"}
-                              </span>
-                            </div>
-                          </div>
+                          <span className="font-bold text-slate-900">
+                            {curso.quantidade}
+                          </span>
                         </div>
-                      </button>
+
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-blue-500"
+                            style={{
+                              width: `${largura}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
                     );
-                  }
-                )
+                  })
               )}
             </div>
           </section>
 
-          {/* RESUMO DA FREQUÊNCIA */}
+          {/* FREQUÊNCIA POR CURSO */}
 
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 p-5">
-              <h2 className="font-bold text-slate-900">
-                Resumo da frequência
-              </h2>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Distribuição dos registros de presença e falta.
-              </p>
-            </div>
-
-            <div className="p-5">
-              <div className="flex items-center justify-center">
-                <div className="relative flex h-40 w-40 items-center justify-center rounded-full border-[14px] border-emerald-100">
-                  <div
-                    className="absolute inset-[-14px] rounded-full border-[14px] border-transparent border-t-emerald-500 border-r-emerald-500"
-                    style={{
-                      transform: `rotate(${Math.max(
-                        0,
-                        frequenciaGeral *
-                          3.6 -
-                          90
-                      )}deg)`,
-                    }}
-                  />
-
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-slate-900">
-                      {frequenciaGeral}%
-                    </div>
-
-                    <div className="text-xs text-slate-400">
-                      presença
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-emerald-50 p-4">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-
-                  <div className="mt-2 text-2xl font-bold text-emerald-700">
-                    {presentes}
-                  </div>
-
-                  <div className="text-xs text-emerald-700/70">
-                    Presenças
-                  </div>
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
+                  <TrendingUp className="h-5 w-5" />
                 </div>
 
-                <div className="rounded-xl bg-red-50 p-4">
-                  <XCircle className="h-5 w-5 text-red-500" />
-
-                  <div className="mt-2 text-2xl font-bold text-red-600">
-                    {faltas}
-                  </div>
-
-                  <div className="text-xs text-red-600/70">
-                    Faltas
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                  <UserCheck className="h-4 w-4 text-emerald-600" />
-
-                  Alunos matriculados
-                </div>
-
-                <div className="mt-1 text-2xl font-bold text-slate-900">
-                  {matriculas.length}
-                </div>
-
-                <div className="text-xs text-slate-400">
-                  Total de vínculos com turmas
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* ATIVIDADE RECENTE */}
-
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-5">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-5 w-5 text-emerald-600" />
-
-              <div>
-                <h2 className="font-bold text-slate-900">
-                  Atividade recente
-                </h2>
-
-                <p className="mt-1 text-xs text-slate-500">
-                  Últimos registros de presença e falta realizados no sistema.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {ultimasAtividades.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-400">
-              Ainda não existem registros de frequência.
-            </div>
-          ) : (
-            <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-              {ultimasAtividades.map(
-                (item) => {
-                  const presente =
-                    statusPresenca(
-                      item.status
-                    ) === "presente";
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="rounded-xl border border-slate-100 bg-slate-50/70 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate font-semibold text-slate-800">
-                            {item.aluno}
-                          </div>
-
-                          <div className="mt-1 truncate text-xs text-slate-500">
-                            {item.turma}
-                          </div>
-
-                          <div className="mt-1 truncate text-xs text-slate-400">
-                            {item.curso}
-                          </div>
-                        </div>
-
-                        <span
-                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                            presente
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-red-100 text-red-700"
-                          }`}
-                        >
-                          {presente
-                            ? "Presença"
-                            : "Falta"}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 space-y-2 text-xs text-slate-500">
-                        <div className="flex items-center gap-2">
-                          <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
-
-                          <span>
-                            {formatarData(
-                              item.data_hora
-                            )}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Clock3 className="h-3.5 w-3.5 text-slate-400" />
-
-                          <span>
-                            {formatarHora(
-                              item.data_hora
-                            )}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <School className="h-3.5 w-3.5 text-slate-400" />
-
-                          <span>
-                            {item.horario}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* FILTRO ATIVO */}
-
-        {turmaSelecionada && (
-          <section className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-                  Filtro ativo
-                </div>
-
-                <h3 className="mt-1 text-lg font-bold text-slate-900">
-                  {turmaSelecionada.nome}
-                </h3>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  {obterHorarioTurma(
-                    turmaSelecionada
-                  )}
-                </p>
-              </div>
-
-              <button
-                onClick={() =>
-                  setTurmaFiltro("")
-                }
-                className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-              >
-                Ver todas as turmas
-              </button>
-            </div>
-          </section>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  description,
-  destaque = false,
-}: {
-  icon: typeof Users;
-  label: string;
-  value: string | number;
-  description: string;
-  destaque?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border p-5 shadow-sm ${
-        destaque
-          ? "border-emerald-200 bg-emerald-50"
-          : "border-slate-200 bg-white"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div
-          className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-            destaque
-              ? "bg-emerald-100 text-emerald-700"
-              : "bg-slate-100 text-slate-600"
-          }`}
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-
-        <TrendingUp
-          className={`h-4 w-4 ${
-            destaque
-              ? "text-emerald-500"
-              : "text-slate-300"
-          }`}
-        />
-      </div>
-
-      <div className="mt-5 text-3xl font-bold tracking-tight text-slate-900">
-        {value}
-      </div>
-
-      <div className="mt-1 text-sm font-semibold text-slate-700">
-        {label}
-      </div>
-
-      <div className="mt-1 text-xs text-slate-400">
-        {description}
-      </div>
-    </div>
-  );
-}
+                <div>
+                  <h2 className="
