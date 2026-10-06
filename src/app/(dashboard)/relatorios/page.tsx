@@ -18,7 +18,7 @@ export default async function RelatoriosPage() {
     supabase.from("operadores").select("id, nome").order("nome"),
     supabase
       .from("matriculas")
-      .select("id, aluno_id, curso_id, turma_id, data_matricula, alunos(nome_completo, cpf), cursos(titulo), turmas(nome)")
+      .select(`id, aluno_id, curso_id, turma_id, data_matricula, alunos(nome_completo, cpf), cursos(titulo), turmas(nome)`)
       .order("data_matricula", { ascending: false }),
   ]);
 
@@ -28,7 +28,7 @@ export default async function RelatoriosPage() {
         cursos={resCursos.data || []}
         turmas={resTurmas.data || []}
         operadores={resOperadores.data || []}
-        matriculas={(resMatriculas.data || []) as any}
+        matriculas={resMatriculas.data || []}
       />
     </div>
   );
