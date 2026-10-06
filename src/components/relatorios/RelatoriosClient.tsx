@@ -206,6 +206,7 @@ export default function RelatoriosClient({
             turmaId: matricula.turma_id,
             turma: turma?.nome || "Turma sem nome",
             curso: curso?.titulo || "Curso sem nome",
+            cursoId: matricula.curso_id,
           }]]),
         });
       } else {
