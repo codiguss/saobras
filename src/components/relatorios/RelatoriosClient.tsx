@@ -15,6 +15,14 @@ import {
   XCircle,
   Percent,
   ClipboardList,
+  UsersRound,
+  UserPlus,
+  Layers3,
+  TrendingUp,
+  TrendingDown,
+  CalendarDays,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -50,6 +58,17 @@ type RelacaoTurma = {
 type RelacaoOperador = {
   nome: string;
 } | null;
+
+type MatriculaRelatorio = {
+  id: string;
+  aluno_id: string;
+  curso_id: string;
+  turma_id: string;
+  data_matricula: string | null;
+  alunos: { nome_completo: string; cpf: string | null } | { nome_completo: string; cpf: string | null }[] | null;
+  cursos: { titulo: string } | { titulo: string }[] | null;
+  turmas: { nome: string } | { nome: string }[] | null;
+};
 
 type PresencaRelatorio = {
   id: string;
@@ -138,10 +157,12 @@ export default function RelatoriosClient({
   cursos,
   turmas,
   operadores,
+  matriculas,
 }: {
   cursos: Curso[];
   turmas: Turma[];
   operadores: Operador[];
+  matriculas: MatriculaRelatorio[];
 }) {
   const [registros, setRegistros] = useState<PresencaRelatorio[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -154,12 +175,57 @@ export default function RelatoriosClient({
   const [filtroDataFim, setFiltroDataFim] = useState("");
   const [filtroPeriodo, setFiltroPeriodo] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
+  const [mostrarMultiplasTurmas, setMostrarMultiplasTurmas] = useState(false);
 
   const turmasFiltradas = useMemo(() => {
     if (!filtroCurso) return turmas;
 
     return turmas.filter((turma) => turma.curso_id === filtroCurso);
   }, [turmas, filtroCurso]);
+
+  const alunosMultiplasTurmas = useMemo(() => {
+    const mapa = new Map<string, {
+      alunoId: string;
+      nome: string;
+      cpf: string;
+      turmas: Map<string, { turmaId: string; turma: string; curso: string }>;
+    }>();
+
+    matriculas.forEach((matricula) => {
+      const aluno = getRelacao(matricula.alunos);
+      const curso = getRelacao(matricula.cursos);
+      const turma = getRelacao(matricula.turmas);
+      const atual = mapa.get(matricula.aluno_id);
+
+      if (!atual) {
+        mapa.set(matricula.aluno_id, {
+          alunoId: matricula.aluno_id,
+          nome: aluno?.nome_completo || "Aluno sem nome",
+          cpf: aluno?.cpf || "",
+          turmas: new Map([[matricula.turma_id, {
+            turmaId: matricula.turma_id,
+            turma: turma?.nome || "Turma sem nome",
+            curso: curso?.titulo || "Curso sem nome",
+          }]]),
+        });
+      } else {
+        atual.turmas.set(matricula.turma_id, {
+          turmaId: matricula.turma_id,
+          turma: turma?.nome || "Turma sem nome",
+          curso: curso?.titulo || "Curso sem nome",
+        });
+      }
+    });
+
+    return Array.from(mapa.values())
+      .filter((aluno) => aluno.turmas.size > 1)
+      .map((aluno) => ({ ...aluno, turmas: Array.from(aluno.turmas.values()) }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [matriculas]);
+
+  const totalTurmas = useMemo(() => new Set(matriculas.map((m) => m.turma_id)).size, [matriculas]);
+  const totalMatriculas = matriculas.length;
+  const totalAlunosMatriculados = useMemo(() => new Set(matriculas.map((m) => m.aluno_id)).size, [matriculas]);
 
   const handlePeriodoChange = (
     event: React.ChangeEvent<HTMLSelectElement>
@@ -300,6 +366,7 @@ export default function RelatoriosClient({
     setBusca("");
     setRegistros([]);
     setBuscou(false);
+    setMostrarMultiplasTurmas(false);
   };
 
   const registrosFiltrados = useMemo(() => {
@@ -473,6 +540,17 @@ export default function RelatoriosClient({
       .sort((a, b) => b.percentual - a.percentual);
   }, [registrosFiltrados]);
 
+  const diasComRegistro = useMemo(() => {
+    return new Set(registrosFiltrados.map((registro) => registro.data_hora.slice(0, 10))).size;
+  }, [registrosFiltrados]);
+
+  const mediaRegistrosPorAluno = totalParticipantes > 0
+    ? (totalRegistros / totalParticipantes).toFixed(1)
+    : "0";
+
+  const melhorCurso = resumoPorCurso.length > 0 ? resumoPorCurso[0] : null;
+  const piorCurso = resumoPorCurso.length > 0 ? resumoPorCurso[resumoPorCurso.length - 1] : null;
+
   /*
    * ================================
    * EXPORTAÇÃO
@@ -584,7 +662,28 @@ export default function RelatoriosClient({
           </div>
         </div>
 
-        <div className="space-y-4 p-5">
+        <div className="space-y-5 p-5">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-2">
+            <span className="px-2 text-xs font-bold uppercase tracking-wide text-slate-500">Atalhos</span>
+            {[
+              ["diario", "Hoje"],
+              ["semanal", "7 dias"],
+              ["mensal", "30 dias"],
+            ].map(([valor, label]) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => handlePeriodoChange({ target: { value: valor } } as React.ChangeEvent<HTMLSelectElement>)}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${filtroPeriodo === valor ? "bg-blue-600 text-white shadow-sm" : "bg-white text-slate-600 hover:bg-slate-100"}`}
+              >
+                {label}
+              </button>
+            ))}
+            {(filtroCurso || filtroTurma || filtroStatus || filtroDataInicio || filtroDataFim || busca) && (
+              <span className="ml-auto text-xs text-slate-400">Filtros personalizados ativos</span>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {/* CURSO */}
             <div>
@@ -734,6 +833,14 @@ export default function RelatoriosClient({
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            {filtroCurso && <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Curso: {cursos.find((c) => c.id === filtroCurso)?.titulo}</span>}
+            {filtroTurma && <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">Turma: {turmas.find((t) => t.id === filtroTurma)?.nome}</span>}
+            {filtroStatus && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Situação: {filtroStatus === "falta" ? "Faltas" : "Presenças"}</span>}
+            {filtroDataInicio && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">De: {formatarData(filtroDataInicio)}</span>}
+            {filtroDataFim && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Até: {formatarData(filtroDataFim)}</span>}
+          </div>
+
           {/* BOTÕES */}
           <div className="flex flex-wrap gap-3 pt-1">
             <button
@@ -787,7 +894,7 @@ export default function RelatoriosClient({
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-8">
               {/* REGISTROS */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
@@ -862,6 +969,54 @@ export default function RelatoriosClient({
                   {totalParticipantes}
                 </p>
               </div>
+
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100"><Layers3 className="h-5 w-5 text-indigo-600" /></div>
+                <p className="text-xs font-medium text-indigo-700">Turmas</p>
+                <p className="mt-1 text-2xl font-bold text-indigo-800">{totalTurmas}</p>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4 shadow-sm">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-100"><CalendarDays className="h-5 w-5 text-cyan-600" /></div>
+                <p className="text-xs font-medium text-cyan-700">Dias registrados</p>
+                <p className="mt-1 text-2xl font-bold text-cyan-800">{diasComRegistro}</p>
+              </div>
+
+              <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-4 shadow-sm">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100"><BarChart3 className="h-5 w-5 text-orange-600" /></div>
+                <p className="text-xs font-medium text-orange-700">Média/aluno</p>
+                <p className="mt-1 text-2xl font-bold text-orange-800">{mediaRegistrosPorAluno}</p>
+              </div>
+            </div>
+          </section>
+
+          {/* ALUNOS EM MAIS DE UMA TURMA */}
+          <section className="rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 via-white to-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-600"><UserPlus className="h-6 w-6" /></div>
+                <div>
+                  <h2 className="font-bold text-slate-900">Alunos em mais de uma turma</h2>
+                  <p className="mt-1 text-sm text-slate-500">Veja quem possui múltiplas matrículas e quais são suas turmas.</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setMostrarMultiplasTurmas(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700">
+                <UsersRound className="h-4 w-4" />
+                Ver {alunosMultiplasTurmas.length} alunos
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </section>
+
+          {/* MAIS INDICADORES */}
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100"><TrendingUp className="h-5 w-5 text-emerald-600" /></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Melhor frequência</p><p className="font-bold text-slate-900">{melhorCurso?.titulo || "—"}</p></div></div>
+              <p className="mt-4 text-3xl font-bold text-emerald-700">{melhorCurso ? `${melhorCurso.percentual}%` : "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100"><TrendingDown className="h-5 w-5 text-red-600" /></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menor frequência</p><p className="font-bold text-slate-900">{piorCurso?.titulo || "—"}</p></div></div>
+              <p className="mt-4 text-3xl font-bold text-red-700">{piorCurso ? `${piorCurso.percentual}%` : "—"}</p>
             </div>
           </section>
 
@@ -1216,6 +1371,41 @@ export default function RelatoriosClient({
             </section>
           )}
         </>
+      )}
+
+      {mostrarMultiplasTurmas && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setMostrarMultiplasTurmas(false); }}>
+          <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div><h2 className="text-lg font-bold text-slate-900">Alunos em múltiplas turmas</h2><p className="text-sm text-slate-500">{alunosMultiplasTurmas.length} aluno(s) com duas ou mais turmas.</p></div>
+              <button type="button" onClick={() => setMostrarMultiplasTurmas(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="overflow-y-auto p-5">
+              {alunosMultiplasTurmas.length === 0 ? (
+                <div className="py-12 text-center"><UsersRound className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 font-semibold text-slate-700">Nenhum aluno em múltiplas turmas</p></div>
+              ) : (
+                <div className="space-y-3">
+                  {alunosMultiplasTurmas.map((aluno) => (
+                    <div key={aluno.alunoId} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div><p className="font-bold text-slate-900">{aluno.nome}</p><p className="text-xs text-slate-500">CPF: {formatarCPF(aluno.cpf)}</p></div>
+                        <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">{aluno.turmas.length} turmas</span>
+                      </div>
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {aluno.turmas.map((turma) => (
+                          <div key={turma.turmaId} className="rounded-lg border border-white bg-white px-3 py-2.5 shadow-sm">
+                            <p className="text-sm font-semibold text-slate-800">{turma.turma}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">{turma.curso}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
