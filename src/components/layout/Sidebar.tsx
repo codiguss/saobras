@@ -39,7 +39,7 @@ export function Sidebar() {
       {/* Cabeçalho da Sidebar */}
       <div className="h-16 flex items-center px-6 border-b border-slate-100">
         <h2 className="font-bold text-slate-800 text-lg tracking-tight">
-          Polo Digital
+          Sistema Do Polo Digital
         </h2>
       </div>
 
