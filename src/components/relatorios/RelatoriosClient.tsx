@@ -188,7 +188,7 @@ export default function RelatoriosClient({
       alunoId: string;
       nome: string;
       cpf: string;
-      turmas: Map<string, { turmaId: string; turma: string; curso: string }>;
+      turmas: Map<string, { turmaId: string; turma: string; curso: string; cursoId: string }>;
     }>();
 
     matriculas.forEach((matricula) => {
@@ -213,14 +213,23 @@ export default function RelatoriosClient({
           turmaId: matricula.turma_id,
           turma: turma?.nome || "Turma sem nome",
           curso: curso?.titulo || "Curso sem nome",
+          cursoId: matricula.curso_id,
         });
       }
     });
 
     return Array.from(mapa.values())
-      .filter((aluno) => aluno.turmas.size > 1)
-      .map((aluno) => ({ ...aluno, turmas: Array.from(aluno.turmas.values()) }))
-      .sort((a, b) => a.nome.localeCompare(b.nome));
+      .map((aluno) => {
+        const turmas = Array.from(aluno.turmas.values());
+        const cursosUnicos = new Set(turmas.map((item) => item.cursoId));
+        return {
+          ...aluno,
+          turmas,
+          cursosQuantidade: cursosUnicos.size,
+        };
+      })
+      .filter((aluno) => aluno.cursosQuantidade > 1)
+      .sort((a, b) => b.cursosQuantidade - a.cursosQuantidade || a.nome.localeCompare(b.nome));
   }, [matriculas]);
 
   const totalTurmas = useMemo(() => new Set(matriculas.map((m) => m.turma_id)).size, [matriculas]);
@@ -548,8 +557,23 @@ export default function RelatoriosClient({
     ? (totalRegistros / totalParticipantes).toFixed(1)
     : "0";
 
-  const melhorCurso = resumoPorCurso.length > 0 ? resumoPorCurso[0] : null;
-  const piorCurso = resumoPorCurso.length > 0 ? resumoPorCurso[resumoPorCurso.length - 1] : null;
+  const rankingCursos = useMemo(() => {
+    return [...resumoPorCurso].sort((a, b) => {
+      if (b.percentual !== a.percentual) return b.percentual - a.percentual;
+      return b.total - a.total;
+    });
+  }, [resumoPorCurso]);
+
+  const rankingAlunos = useMemo(() => {
+    return [...resumoPorAluno].sort((a, b) => {
+      if (b.percentual !== a.percentual) return b.percentual - a.percentual;
+      return b.total - a.total;
+    });
+  }, [resumoPorAluno]);
+
+  const topCursos = rankingCursos.slice(0, 5);
+  const topAlunos = rankingAlunos.slice(0, 5);
+  const alunosComMenorFrequencia = [...rankingAlunos].reverse().slice(0, 5);
 
   /*
    * ================================
@@ -990,7 +1014,7 @@ export default function RelatoriosClient({
             </div>
           </section>
 
-          {/* ALUNOS EM MAIS DE UMA TURMA */}
+          {/* ALUNOS EM MAIS DE UM CURSO */}
           <section className="rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 via-white to-white p-5 shadow-sm">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="flex items-start gap-4">
@@ -1008,17 +1032,97 @@ export default function RelatoriosClient({
             </div>
           </section>
 
-          {/* MAIS INDICADORES */}
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100"><TrendingUp className="h-5 w-5 text-emerald-600" /></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Melhor frequência</p><p className="font-bold text-slate-900">{melhorCurso?.titulo || "—"}</p></div></div>
-              <p className="mt-4 text-3xl font-bold text-emerald-700">{melhorCurso ? `${melhorCurso.percentual}%` : "—"}</p>
+          {/* RANKINGS DE FREQUÊNCIA */}
+          <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-bold text-slate-900">Ranking de frequência por curso</h2>
+                    <p className="mt-1 text-xs text-slate-500">Quanto maior a porcentagem, maior a presença registrada.</p>
+                  </div>
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Top 5</span>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {topCursos.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-sm text-slate-400">Gere um relatório para ver o ranking.</p>
+                ) : topCursos.map((curso, index) => (
+                  <div key={curso.cursoId} className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">{index + 1}º</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-sm font-bold text-slate-900">{curso.titulo}</p>
+                          <span className="shrink-0 text-sm font-extrabold text-emerald-700">{curso.percentual}%</span>
+                        </div>
+                        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${curso.percentual}%` }} />
+                        </div>
+                        <p className="mt-1.5 text-xs text-slate-500">{curso.presencas} presenças · {curso.faltas} faltas · {curso.participantes} alunos</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100"><TrendingDown className="h-5 w-5 text-red-600" /></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menor frequência</p><p className="font-bold text-slate-900">{piorCurso?.titulo || "—"}</p></div></div>
-              <p className="mt-4 text-3xl font-bold text-red-700">{piorCurso ? `${piorCurso.percentual}%` : "—"}</p>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-bold text-slate-900">Ranking de frequência por aluno</h2>
+                    <p className="mt-1 text-xs text-slate-500">Baseado nos registros de presença e falta do período.</p>
+                  </div>
+                  <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700">Top 5</span>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {topAlunos.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-sm text-slate-400">Gere um relatório para ver o ranking.</p>
+                ) : topAlunos.map((aluno, index) => (
+                  <div key={aluno.alunoId} className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">{index + 1}º</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-sm font-bold text-slate-900">{aluno.nome}</p>
+                          <span className={`shrink-0 text-sm font-extrabold ${aluno.percentual >= 75 ? "text-emerald-700" : "text-red-700"}`}>{aluno.percentual}%</span>
+                        </div>
+                        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                          <div className={`h-full rounded-full ${aluno.percentual >= 75 ? "bg-emerald-500" : "bg-red-500"}`} style={{ width: `${aluno.percentual}%` }} />
+                        </div>
+                        <p className="mt-1.5 text-xs text-slate-500">{aluno.presencas} presenças · {aluno.faltas} faltas · {aluno.total} registros</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
+
+          {alunosComMenorFrequencia.length > 0 && (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+                  <TrendingDown className="h-5 w-5 text-amber-700" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-bold text-slate-900">Alunos que precisam de atenção</h2>
+                  <p className="mt-1 text-xs text-slate-600">Menores frequências entre os alunos que possuem registros no período.</p>
+                  <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                    {alunosComMenorFrequencia.map((aluno) => (
+                      <div key={aluno.alunoId} className="rounded-xl border border-amber-100 bg-white p-3">
+                        <p className="truncate text-sm font-semibold text-slate-800">{aluno.nome}</p>
+                        <p className="mt-1 text-lg font-extrabold text-red-700">{aluno.percentual}%</p>
+                        <p className="text-[11px] text-slate-500">{aluno.faltas} falta(s) · {aluno.presencas} presença(s)</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* SEM RESULTADOS */}
           {registrosFiltrados.length === 0 && (
@@ -1377,25 +1481,25 @@ export default function RelatoriosClient({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setMostrarMultiplasTurmas(false); }}>
           <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div><h2 className="text-lg font-bold text-slate-900">Alunos em múltiplas turmas</h2><p className="text-sm text-slate-500">{alunosMultiplasTurmas.length} aluno(s) com duas ou mais turmas.</p></div>
+              <div><h2 className="text-lg font-bold text-slate-900">Alunos em múltiplos cursos</h2><p className="text-sm text-slate-500">{alunosMultiplasTurmas.length} aluno(s) matriculado(s) em dois ou mais cursos.</p></div>
               <button type="button" onClick={() => setMostrarMultiplasTurmas(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-5 w-5" /></button>
             </div>
             <div className="overflow-y-auto p-5">
               {alunosMultiplasTurmas.length === 0 ? (
-                <div className="py-12 text-center"><UsersRound className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 font-semibold text-slate-700">Nenhum aluno em múltiplas turmas</p></div>
+                <div className="py-12 text-center"><UsersRound className="mx-auto h-10 w-10 text-slate-300" /><p className="mt-3 font-semibold text-slate-700">Nenhum aluno em múltiplos cursos</p></div>
               ) : (
                 <div className="space-y-3">
                   {alunosMultiplasTurmas.map((aluno) => (
                     <div key={aluno.alunoId} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div><p className="font-bold text-slate-900">{aluno.nome}</p><p className="text-xs text-slate-500">CPF: {formatarCPF(aluno.cpf)}</p></div>
-                        <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">{aluno.turmas.length} turmas</span>
+                        <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">{aluno.cursosQuantidade} cursos</span>
                       </div>
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
                         {aluno.turmas.map((turma) => (
                           <div key={turma.turmaId} className="rounded-lg border border-white bg-white px-3 py-2.5 shadow-sm">
-                            <p className="text-sm font-semibold text-slate-800">{turma.turma}</p>
-                            <p className="mt-0.5 text-xs text-slate-500">{turma.curso}</p>
+                            <p className="text-sm font-semibold text-slate-800">Curso: {turma.curso}</p>
+                            <p className="mt-1 text-xs text-slate-500">Turma: {turma.turma}</p>
                           </div>
                         ))}
                       </div>
