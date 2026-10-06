@@ -12,10 +12,14 @@ export default async function RelatoriosPage() {
     redirect("/login");
   }
 
-  const [resCursos, resTurmas, resOperadores] = await Promise.all([
+  const [resCursos, resTurmas, resOperadores, resMatriculas] = await Promise.all([
     supabase.from("cursos").select("id, titulo").order("titulo"),
     supabase.from("turmas").select("id, nome, curso_id").order("nome"),
     supabase.from("operadores").select("id, nome").order("nome"),
+    supabase
+      .from("matriculas")
+      .select("id, aluno_id, curso_id, turma_id, data_matricula, alunos(nome_completo, cpf), cursos(titulo), turmas(nome)")
+      .order("data_matricula", { ascending: false }),
   ]);
 
   return (
@@ -24,6 +28,7 @@ export default async function RelatoriosPage() {
         cursos={resCursos.data || []}
         turmas={resTurmas.data || []}
         operadores={resOperadores.data || []}
+        matriculas={(resMatriculas.data || []) as any}
       />
     </div>
   );
